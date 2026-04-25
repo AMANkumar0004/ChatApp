@@ -41,6 +41,7 @@ export const signup = async (req, res) => {
   })
   .json({
     user,
+    token,
     success:"Signup Successfully"
   });
   } catch (err) {
@@ -73,6 +74,7 @@ export const login = async (req, res) => {
 })
   .json({
     user,
+    token,
     success:"Login Successfully"
   });
   } catch (err) {

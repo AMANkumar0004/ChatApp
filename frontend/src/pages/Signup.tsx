@@ -18,7 +18,7 @@ export default function Signup() {
 
     try {
       const res =await api.post("/auth/signup", form);
-
+      localStorage.setItem("token", res.data.token);
       navigate("/chat");
       toast.success(`${res.data.success}!! welcome ${res.data.user.username}`, {
 position: "top-center",

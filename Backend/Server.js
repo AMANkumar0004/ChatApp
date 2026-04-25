@@ -25,6 +25,8 @@ const app = express();
 app.use(cors({
   origin: process.env.CLIENT_URL || "http://localhost:5174",
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
 app.use(express.json());
@@ -42,8 +44,9 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL||"http://localhost:5174",
+    origin: process.env.CLIENT_URL || "http://localhost:5174",
     credentials: true,
+    methods: ["GET", "POST"],
   },
 });
 
