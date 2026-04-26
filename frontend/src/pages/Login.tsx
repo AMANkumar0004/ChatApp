@@ -20,10 +20,9 @@ export default function Login() {
       console.log(res);
       
       localStorage.setItem("token", res.data.token);
-      navigate("/chat");
       toast.success(`${res.data.success}!! welcome ${res.data.user.username}`, {
 position: "top-center",
-autoClose: 2000,
+autoClose: 1500,
 hideProgressBar: false,
 closeOnClick: false,
 pauseOnHover: true,
@@ -32,6 +31,7 @@ progress: undefined,
 theme: "dark",
 transition: Bounce,
 })
+setTimeout(() => navigate("/chat"), 1500);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Login failed");
     }
