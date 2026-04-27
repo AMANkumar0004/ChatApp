@@ -180,6 +180,7 @@ export default function Sidebar({
   const handleLogout = async () => {
     try {
       await api.post("/auth/logout");
+       localStorage.removeItem("token");
       socket.disconnect();
       window.location.href = "/";
        toast.error( "Logout Successfull");
