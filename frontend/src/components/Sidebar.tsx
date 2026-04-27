@@ -3,15 +3,19 @@ import { api } from "../services/api";
 import { socket } from "../socket";
 import InvitationPanel from "./InvitationPanel";
 import CreateGroupModal from "./CreateGroupModel";
+import ProfileModal from "./ProfileModal";
 import { toast } from "react-toastify";
+import { formatLastSeen } from "../..//utils/formatLastSeen";
 
 export default function Sidebar({
   onSelectUser,
   currentUser,
+  userStatuses = {},
 }: {
   onSelectUser: (user: any) => void;
   selectedUser: any;
   currentUser: any;
+  userStatuses: Record<string, Date | null>;
 }) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -21,18 +25,17 @@ export default function Sidebar({
   const [showInvitations, setShowInvitations] = useState(false);
   const [inviteStatuses, setInviteStatuses] = useState<Record<string, string>>({});
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileUser, setProfileUser] = useState<any>(null);
 
-  // load contacts
-  useEffect(() => {
-    fetchContacts();
-  }, []);
+  useEffect(() => { fetchContacts(); }, []);
 
   const fetchContacts = async () => {
     try {
       const res = await api.get("/conversations/contacts");
       const seen = new Set();
       const unique = res.data.contacts.filter((c: any) => {
-        if (c.isGroup) return true; // always include groups
+        if (c.isGroup) return true;
         if (!c.user || seen.has(c.user._id)) return false;
         seen.add(c.user._id);
         return true;
@@ -43,10 +46,7 @@ export default function Sidebar({
     }
   };
 
-  // load pending invitations
-  useEffect(() => {
-    fetchPendingInvitations();
-  }, []);
+  useEffect(() => { fetchPendingInvitations(); }, []);
 
   const fetchPendingInvitations = async () => {
     try {
@@ -57,7 +57,6 @@ export default function Sidebar({
     }
   };
 
-  // socket listeners
   useEffect(() => {
     socket.on("receive_invitation", (invitation) => {
       setPendingInvitations((prev) => [...prev, invitation]);
@@ -99,7 +98,6 @@ export default function Sidebar({
     };
   }, [currentUser]);
 
-  // search users
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -145,23 +143,16 @@ export default function Sidebar({
 
   const handleAccept = async (invitation: any) => {
     try {
-      const res = await api.post("/invitations/accept", {
-        invitationId: invitation._id,
-      });
+      const res = await api.post("/invitations/accept", { invitationId: invitation._id });
       const conversation = res.data.conversation;
-      socket.emit("accept_invitation", {
-        senderId: invitation.sender._id,
-        conversation,
-      });
-      setPendingInvitations((prev) =>
-        prev.filter((inv) => inv._id !== invitation._id)
-      );
+      socket.emit("accept_invitation", { senderId: invitation.sender._id, conversation });
+      setPendingInvitations((prev) => prev.filter((inv) => inv._id !== invitation._id));
       setContacts((prev) => [
         ...prev,
         { conversationId: conversation._id, user: invitation.sender },
       ]);
     } catch (err: any) {
-      toast.error(err.response?.data?.message|| "Failed to accept invitation");
+      toast.error(err.response?.data?.message || "Failed to accept invitation");
     }
   };
 
@@ -169,9 +160,7 @@ export default function Sidebar({
     try {
       await api.post("/invitations/reject", { invitationId: invitation._id });
       socket.emit("reject_invitation", { senderId: invitation.sender._id });
-      setPendingInvitations((prev) =>
-        prev.filter((inv) => inv._id !== invitation._id)
-      );
+      setPendingInvitations((prev) => prev.filter((inv) => inv._id !== invitation._id));
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to reject invitation");
     }
@@ -180,11 +169,10 @@ export default function Sidebar({
   const handleLogout = async () => {
     try {
       await api.post("/auth/logout");
-       localStorage.removeItem("token");
+      localStorage.removeItem("token");
       socket.disconnect();
       window.location.href = "/";
-       toast.error( "Logout Successfull");
-      
+      toast.error("Logout Successful");
     } catch (err) {
       console.log("Logout failed:", err);
     }
@@ -197,7 +185,6 @@ export default function Sidebar({
         memberIds: members.map((m) => m._id),
       });
       const conversation = res.data.conversation;
-      
       socket.emit("group_created", {
         conversation,
         memberIds: members.map((m) => m._id),
@@ -217,9 +204,12 @@ export default function Sidebar({
     }
   };
 
+  const handleProfileUpdate = (updatedUser: any) => {
+    setProfileUser(updatedUser);
+  };
+
   const renderInviteButton = (user: any) => {
     const status = inviteStatuses[user._id];
-
     if (status === "contacts") {
       return (
         <button
@@ -230,7 +220,6 @@ export default function Sidebar({
         </button>
       );
     }
-
     if (status === "pending") {
       return (
         <span className="text-xs px-3 py-1 rounded-full bg-[#2a3942] text-[#8696a0]">
@@ -238,7 +227,6 @@ export default function Sidebar({
         </span>
       );
     }
-
     return (
       <button
         onClick={() => handleSendInvite(user)}
@@ -249,17 +237,30 @@ export default function Sidebar({
     );
   };
 
+  const activeUser = profileUser || currentUser;
+
   return (
     <div className="h-full flex flex-col bg-[#111b21] text-white relative">
 
       {/* Header */}
       <div className="px-4 py-3 bg-[#202c33] flex items-center justify-between">
+
+        {/* My avatar — click to open profile */}
+        <button
+          onClick={() => setShowProfile(true)}
+          className="w-9 h-9 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase text-sm overflow-hidden flex-shrink-0"
+        >
+          {activeUser?.profilePic ? (
+            <img src={activeUser.profilePic} className="w-full h-full object-cover" alt="profile" />
+          ) : (
+            activeUser?.username?.[0] || "?"
+          )}
+        </button>
+
         <p className="font-semibold text-lg">Chats</p>
+
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowInvitations(!showInvitations)}
-            className="relative"
-          >
+          <button onClick={() => setShowInvitations(!showInvitations)} className="relative">
             🔔
             {pendingInvitations.length > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">
@@ -316,8 +317,13 @@ export default function Sidebar({
               className="flex items-center justify-between px-4 py-3 hover:bg-[#202c33]"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase">
-                  {user.username[0]}
+                {/* profile pic in search results */}
+                <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
+                  {user.profilePic ? (
+                    <img src={user.profilePic} className="w-full h-full object-cover" alt={user.username} />
+                  ) : (
+                    user.username[0]
+                  )}
                 </div>
                 <div>
                   <p className="font-medium">{user.username}</p>
@@ -336,29 +342,51 @@ export default function Sidebar({
               No contacts yet. Search to find people.
             </p>
           )}
-          {contacts.map((contact) => (
-            <div
-              key={contact.conversationId}
-              onClick={() => onSelectUser(contact.isGroup ? contact : contact.user)}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-[#202c33] cursor-pointer"
-            >
-              <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase">
-                {contact.isGroup
-                  ? contact.groupName[0]
-                  : contact.user?.username[0]}
+          {contacts.map((contact) => {
+            const userId = contact.user?._id;
+            const status = userId && userStatuses ? userStatuses[userId] : undefined;
+            const isOnline = status === null;
+
+            return (
+              <div
+                key={contact.conversationId}
+                onClick={() => onSelectUser(contact.isGroup ? contact : contact.user)}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-[#202c33] cursor-pointer"
+              >
+                {/* Avatar with online dot */}
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
+                    {contact.isGroup ? (
+                      contact.groupName[0]
+                    ) : contact.user?.profilePic ? (
+                      <img src={contact.user.profilePic} className="w-full h-full object-cover" alt={contact.user.username} />
+                    ) : (
+                      contact.user?.username[0]
+                    )}
+                  </div>
+                  {/* Online dot — private only */}
+                  {!contact.isGroup && isOnline && (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
+                  )}
+                </div>
+
+                <div>
+                  <p className="font-medium">
+                    {contact.isGroup ? contact.groupName : contact.user?.username}
+                  </p>
+                  <p className="text-xs text-[#8696a0]">
+                    {contact.isGroup
+                      ? `${contact.participants?.length} members`
+                      : isOnline
+                      ? "online"
+                      : status
+                      ? formatLastSeen(status)
+                      : "offline"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium">
-                  {contact.isGroup ? contact.groupName : contact.user?.username}
-                </p>
-                <p className="text-sm text-[#8696a0]">
-                  {contact.isGroup
-                    ? `${contact.participants?.length} members`
-                    : contact.user?.email}
-                </p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -368,6 +396,15 @@ export default function Sidebar({
           contacts={contacts}
           onClose={() => setShowCreateGroup(false)}
           onCreateGroup={handleCreateGroup}
+        />
+      )}
+
+      {/* Profile Modal */}
+      {showProfile && (
+        <ProfileModal
+          currentUser={activeUser}
+          onClose={() => setShowProfile(false)}
+          onUpdate={handleProfileUpdate}
         />
       )}
 

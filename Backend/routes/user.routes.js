@@ -1,12 +1,12 @@
 import express from "express";
 import { protect } from "../middleware/auth.middleware.js";
-import { searchUsers } from "../controllers/user.controller.js";
+import { searchUsers, uploadProfilePic, removeProfilePic } from "../controllers/user.controller.js";
 import { User } from "../models/User.js";
+import { upload } from "../cloudinary.js";
 
 const router = express.Router();
 
 router.get("/search", protect, searchUsers);
-
 
 router.get("/:userId/status", protect, async (req, res) => {
   try {
@@ -17,5 +17,8 @@ router.get("/:userId/status", protect, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+router.post("/upload-profile-pic", protect, upload.single("profilePic"), uploadProfilePic);
+router.delete("/remove-profile-pic", protect, removeProfilePic);
 
 export default router;
