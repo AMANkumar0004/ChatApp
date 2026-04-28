@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 import { api } from "../services/api";
+import { toast } from "react-toastify";
 
 export default function ChatWindow({ receiver }: { receiver: any }) {
   const [message, setMessage] = useState("");
@@ -8,13 +9,33 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
   const [user, setUser] = useState<any>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<{ lastSeen: Date | null } | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    msgId: string;
+    isMine: boolean;
+  } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const isGroup = receiver?.isGroup === true;
 
   useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Close context menu when clicking anywhere else
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, []);
+
+  useEffect(() => {
     const init = async () => {
       try {
-        // 1. Get logged in user
         const res = await api.get("/auth/me");
         const currentUser = res.data.user;
         setUser(currentUser);
@@ -22,51 +43,45 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
         let convId: string;
 
         if (isGroup) {
-          
           convId = receiver.conversationId;
           setConversationId(convId);
-          setReceiverStatus(null); 
+          setReceiverStatus(null);
         } else {
-          // private — get or create conversation
-          const convRes = await api.post("/conversations", {
-            receiverId: receiver._id,
-          });
+          const convRes = await api.post("/conversations", { receiverId: receiver._id });
           convId = convRes.data.conversation._id;
           setConversationId(convId);
-
-          // fetch receiver's status
           const statusRes = await api.get(`/users/${receiver._id}/status`);
           setReceiverStatus(statusRes.data);
         }
 
-        // 2. Load message history
         const msgRes = await api.get(`/conversations/${convId}/messages`);
         setMessages(msgRes.data.messages);
 
-        // 3. Connect socket and join room
         const joinRoom = () => {
           socket.emit("register_user", currentUser._id);
           socket.emit("join_conversation", convId);
         };
 
-        if (socket.connected) {
-          joinRoom();
-        } else {
-          socket.connect();
-          socket.once("connect", joinRoom);
-        }
+        if (socket.connected) joinRoom();
+        else { socket.connect(); socket.once("connect", joinRoom); }
 
-        socket.on("connect", () => {
-          socket.emit("register_user", currentUser._id);
-        });
+        socket.on("connect", () => socket.emit("register_user", currentUser._id));
 
-        // 4. Listen for new messages
         socket.off("receive_message");
         socket.on("receive_message", (data) => {
           setMessages((prev) => [...prev, data]);
         });
 
-        // 5. Listen for status changes 
+        socket.off("message_deleted");
+        socket.on("message_deleted", ({ messageId }) => {
+          setMessages((prev) => prev.filter((m) => m._id !== messageId));
+        });
+
+        socket.off("chat_cleared");
+        socket.on("chat_cleared", ({ conversationId: clearedId }) => {
+          if (clearedId === convId) setMessages([]);
+        });
+
         socket.off("user_status_change");
         if (!isGroup) {
           socket.on("user_status_change", (data) => {
@@ -75,7 +90,6 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
             }
           });
         }
-
       } catch (err: any) {
         console.log("Error:", err.response?.data || err.message);
       }
@@ -87,79 +101,218 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
       socket.off("receive_message");
       socket.off("connect");
       socket.off("user_status_change");
+      socket.off("message_deleted");
+      socket.off("chat_cleared");
     };
   }, [receiver?.isGroup ? receiver.conversationId : receiver._id]);
 
   const sendMessage = () => {
     if (!message.trim() || !user || !conversationId) return;
-
     socket.emit("send_message", {
       conversationId,
       text: message,
       senderId: user._id,
       receiverId: isGroup ? null : receiver._id,
     });
-
     setMessage("");
   };
 
+  const deleteMessage = async (msgId: string) => {
+    setContextMenu(null);
+    try {
+      await api.delete(`/messages/${msgId}`);
+      socket.emit("delete_message", { messageId: msgId, conversationId });
+      setMessages((prev) => prev.filter((m) => m._id !== msgId));
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "Could not delete message");
+    }
+  };
+
+  const clearChat = async () => {
+    if (!conversationId) return;
+    try {
+      await api.delete(`/messages/clear/${conversationId}`);
+      socket.emit("clear_chat", { conversationId });
+      setMessages([]);
+      setShowClearConfirm(false);
+      toast.success("Chat cleared");
+    } catch (err: any) {
+      toast.error("Could not clear chat");
+    }
+  };
+
+  const handleRightClick = (
+    e: React.MouseEvent,
+    msgId: string,
+    isMine: boolean
+  ) => {
+    e.preventDefault();
+    // Get position relative to the chat container
+    const container = chatContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+
+    // Keep menu inside the container bounds
+    const menuWidth = 150;
+    const menuHeight = isMine ? 80 : 40;
+    let x = e.clientX - rect.left;
+    let y = e.clientY - rect.top;
+    if (x + menuWidth > rect.width) x = rect.width - menuWidth - 8;
+    if (y + menuHeight > rect.height) y = y - menuHeight;
+
+    setContextMenu({ visible: true, x, y, msgId, isMine });
+  };
 
   const formatLastSeen = (lastSeen: Date | string) => {
-  const date = new Date(lastSeen);
-  const now = new Date();
-
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "last seen just now";
-  if (diffMins < 60) return `last seen ${diffMins} min ago`;
-  if (diffHours < 24) return `last seen today at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  if (diffDays === 1) return `last seen yesterday at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  if (diffDays < 7) return `last seen ${diffDays} days ago`;
-  return `last seen on ${date.toLocaleDateString([], { day: "numeric", month: "short" })}`;
-};
+    const date = new Date(lastSeen);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 1) return "last seen just now";
+    if (diffMins < 60) return `last seen ${diffMins} min ago`;
+    if (diffHours < 24) return `last seen today at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    if (diffDays === 1) return `last seen yesterday at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    if (diffDays < 7) return `last seen ${diffDays} days ago`;
+    return `last seen on ${date.toLocaleDateString([], { day: "numeric", month: "short" })}`;
+  };
 
   return (
-    <div className="h-full flex flex-col bg-[#111b21] text-white">
+    <div ref={chatContainerRef} className="h-full flex flex-col bg-[#111b21] text-white relative">
 
       {/* Header */}
-      <div className="p-4 border-b border-[#2a3942] flex items-center gap-3">
-        <div className="relative">
-          <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase">
-            {isGroup ? receiver.groupName[0] : receiver.username[0]}
+      <div className="p-4 border-b border-[#2a3942] flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
+              {isGroup ? (
+                receiver.groupName[0]
+              ) : receiver.profilePic ? (
+                <img src={receiver.profilePic} className="w-full h-full object-cover" />
+              ) : (
+                receiver.username[0]
+              )}
+            </div>
+            {!isGroup && receiverStatus?.lastSeen === null && (
+              <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
+            )}
           </div>
-          {/* online dot — private only */}
-          {!isGroup && receiverStatus?.lastSeen === null && (
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
+          <div>
+            <p className="font-medium">
+              {isGroup ? receiver.groupName : receiver.username}
+            </p>
+            <p className="text-xs text-[#8696a0]">
+              {isGroup
+                ? `${receiver.participants?.length} members`
+                : receiverStatus?.lastSeen === null
+                ? "online"
+                : receiverStatus?.lastSeen
+                ? formatLastSeen(receiverStatus.lastSeen)
+                : "offline"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          className="text-xs px-3 py-1 rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-red-600 hover:text-white transition-colors"
+        >
+          Clear Chat
+        </button>
+      </div>
+
+      {/* ── Clear chat confirm — dim backdrop but chat visible behind ── */}
+      {showClearConfirm && (
+        <>
+          {/* Semi-transparent backdrop — blocks clicks but shows content */}
+          <div
+            className="absolute inset-0 z-40"
+            style={{ background: "rgba(0,0,0,0.45)" }}
+            onClick={() => setShowClearConfirm(false)}
+          />
+          {/* Small centered card — sits above backdrop */}
+          <div
+            className="absolute z-50 bg-[#202c33] rounded-xl p-5 w-68 flex flex-col gap-4 shadow-2xl"
+            style={{
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "280px",
+            }}
+          >
+            <p className="text-white font-semibold text-sm">Clear all messages?</p>
+            <p className="text-[#8696a0] text-xs leading-relaxed">
+              This will delete all messages for everyone. This cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-2 rounded-lg bg-[#2a3942] text-white text-sm hover:bg-[#3a4952]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={clearChat}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Right-click context menu ── */}
+      {contextMenu?.visible && (
+        <div
+          className="absolute z-50 bg-[#233138] rounded-lg shadow-xl overflow-hidden"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            width: "150px",
+            border: "1px solid #2a3942",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Copy — available on all messages */}
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#2a3942] flex items-center gap-2"
+            onClick={() => {
+              const msg = messages.find((m) => m._id === contextMenu.msgId);
+              if (msg?.text) navigator.clipboard.writeText(msg.text);
+              toast.success("Copied!");
+              setContextMenu(null);
+            }}
+          >
+             Copy
+          </button>
+
+          {/* Delete — only my messages */}
+          {contextMenu.isMine && (
+            <button
+              className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#2a3942] flex items-center gap-2"
+              onClick={() => deleteMessage(contextMenu.msgId)}
+            >
+               Delete
+            </button>
           )}
         </div>
-        <div>
-          <p className="font-medium">
-            {isGroup ? receiver.groupName : receiver.username}
-          </p>
-          <p className="text-xs text-[#8696a0]">
-       {isGroup
-            ? `${receiver.participants?.length} members`
-            : receiverStatus?.lastSeen === null
-            ? "online"
-            : receiverStatus?.lastSeen
-            ? formatLastSeen(receiverStatus.lastSeen)
-            : "offline"}
-           </p>
-        </div>
-      </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4">
+        {messages.length === 0 && (
+          <p className="text-center text-[#8696a0] text-sm mt-10">No messages yet</p>
+        )}
         {messages.map((msg, i) => {
           const senderId = msg.sender?._id || msg.sender;
           const isMine = senderId?.toString() === user?._id?.toString();
 
           return (
             <div
-              key={i}
+              key={msg._id || i}
+              onContextMenu={(e) => handleRightClick(e, msg._id, isMine)}
               style={{
                 display: "flex",
                 justifyContent: isMine ? "flex-end" : "flex-start",
@@ -173,19 +326,23 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
                   maxWidth: "70%",
                   backgroundColor: isMine ? "#005c4b" : "#202c33",
                   color: "white",
+                  cursor: "context-menu",
                 }}
               >
-                {/* show sender name in group chats */}
                 {isGroup && !isMine && (
                   <p style={{ fontSize: "11px", color: "#00a884", marginBottom: "2px" }}>
                     {msg.sender?.username || ""}
                   </p>
                 )}
-                {msg.text}
+                <p>{msg.text}</p>
+                <p style={{ fontSize: "10px", color: "#8696a0", textAlign: "right", marginTop: "2px" }}>
+                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </p>
               </div>
             </div>
           );
         })}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
@@ -197,14 +354,10 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
           className="flex-1 p-2 bg-[#2a3942] rounded text-white outline-none"
           placeholder="Type a message..."
         />
-        <button
-          onClick={sendMessage}
-          className="bg-[#00a884] px-4 rounded"
-        >
+        <button onClick={sendMessage} className="bg-[#00a884] px-4 rounded">
           Send
         </button>
       </div>
-
     </div>
   );
 }

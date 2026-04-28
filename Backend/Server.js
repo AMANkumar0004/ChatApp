@@ -14,7 +14,7 @@ import { User } from "./models/User.js";
 import authRoutes from "./routes/auth.routes.js";
 import conversationRoutes from "./routes/conversation.routes.js";
 import invitationRoutes from "./routes/invitation.routes.js";
-
+import messageRoutes from "./routes/messages.route.js"
 dotenv.config();
 const PORT = process.env.PORT || 5000;
 
@@ -36,6 +36,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/invitations", invitationRoutes);
+app.use("/api/messages",messageRoutes)
 
 
 
@@ -173,6 +174,14 @@ socket.on("reject_invitation", (data) => {
     }
     console.log("User disconnected:", socket.id);
   });
+
+  socket.on("delete_message", ({ messageId, conversationId }) => {
+  io.to(conversationId).emit("message_deleted", { messageId });
+});
+
+socket.on("clear_chat", ({ conversationId }) => {
+  io.to(conversationId).emit("chat_cleared", { conversationId });
+});
 });
 
 mongoose.connect(process.env.MONGO_URI)
