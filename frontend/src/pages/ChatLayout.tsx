@@ -1,14 +1,13 @@
-import { useState ,useEffect } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import { socket } from "../socket";
 import { api } from "../services/api";
 
 export default function ChatLayout() {
-  // this will hold the selected receiver's info
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
-
+  const [userStatuses, setUserStatuses] = useState<Record<string, Date | null>>({});
 
   useEffect(() => {
     const registerUser = async () => {
@@ -16,7 +15,6 @@ export default function ChatLayout() {
         const res = await api.get("/auth/me");
         const currentUser = res.data.user;
 
-        //  connect and register as soon as layout loads
         if (!socket.connected) socket.connect();
 
         setCurrentUser(res.data.user);
@@ -31,7 +29,6 @@ export default function ChatLayout() {
           socket.once("connect", register);
         }
 
-        // re-register on reconnect
         socket.on("connect", register);
       } catch (err) {
         console.log("Failed to register user:", err);
@@ -44,14 +41,29 @@ export default function ChatLayout() {
       socket.off("connect");
     };
   }, []);
+
+  // Listen for online/offline status updates from the server
+  useEffect(() => {
+    socket.on("user_status_update", ({ userId, lastSeen }: { userId: string; lastSeen: Date | null }) => {
+      setUserStatuses((prev) => ({ ...prev, [userId]: lastSeen }));
+    });
+
+    return () => {
+      socket.off("user_status_update");
+    };
+  }, []);
+
   return (
     <div className="h-screen flex bg-[#111b21] text-white">
-      
+
       {/* LEFT — Sidebar */}
       <div className="w-87.5 border-r border-[#2a3942]">
-        <Sidebar onSelectUser={setSelectedUser}
-        selectedUser={selectedUser}
-  currentUser={currentUser}  />
+        <Sidebar
+          onSelectUser={setSelectedUser}
+          selectedUser={selectedUser}
+          currentUser={currentUser}
+          userStatuses={userStatuses}
+        />
       </div>
 
       {/* RIGHT — Chat Window */}
@@ -59,7 +71,6 @@ export default function ChatLayout() {
         {selectedUser ? (
           <ChatWindow receiver={selectedUser} />
         ) : (
-          // shown when no chat is selected
           <div className="h-full flex items-center justify-center text-[#8696a0]">
             <p>Select a contact to start chatting</p>
           </div>
