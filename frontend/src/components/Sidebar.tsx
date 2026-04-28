@@ -272,7 +272,7 @@ export default function Sidebar({
             onClick={() => setShowCreateGroup(true)}
             className="text-xs px-3 py-1 rounded-full bg-[#2a3942] text-white hover:bg-[#3a4942]"
           >
-            + Group
+           <i className="fa-solid fa-user-group" style={{color:"white"}}></i> Group
           </button>
           <button
             onClick={handleLogout}

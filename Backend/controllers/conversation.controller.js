@@ -6,7 +6,7 @@ export const getContacts = async (req, res) => {
   try {
     const conversations = await Conversation.find({
       participants: req.user._id,
-    }).populate("participants", "username email");
+    }).populate("participants", "username email profilePic");
 
     const contacts = conversations.map((conv) => {
       if (conv.type === "group") {
