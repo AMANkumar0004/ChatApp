@@ -3,13 +3,20 @@ import { socket } from "../socket";
 import { api } from "../services/api";
 import { toast } from "react-toastify";
 
-export default function ChatWindow({ receiver }: { receiver: any }) {
+export default function ChatWindow({
+  receiver,
+  onClose,
+}: {
+  receiver: any;
+  onClose: () => void;
+}) {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<{ lastSeen: Date | null } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [headerMenu, setHeaderMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -17,18 +24,23 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
     msgId: string;
     isMine: boolean;
   } | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const isGroup = receiver?.isGroup === true;
 
+  // Auto scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Close context menu when clicking anywhere else
+  // Close context menu on click anywhere
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
+    const handleClick = () => {
+      setContextMenu(null);
+      setHeaderMenu(false);
+    };
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
   }, []);
@@ -147,12 +159,10 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
     isMine: boolean
   ) => {
     e.preventDefault();
-    // Get position relative to the chat container
     const container = chatContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
 
-    // Keep menu inside the container bounds
     const menuWidth = 150;
     const menuHeight = isMine ? 80 : 40;
     let x = e.clientX - rect.left;
@@ -181,8 +191,15 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
   return (
     <div ref={chatContainerRef} className="h-full flex flex-col bg-[#111b21] text-white relative">
 
-      {/* Header */}
-      <div className="p-4 border-b border-[#2a3942] flex items-center justify-between">
+      {/* ── Header ── */}
+      <div
+        className="p-4 border-b border-[#2a3942] flex items-center justify-between flex-shrink-0"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setHeaderMenu(true);
+        }}
+      >
+        {/* Left — avatar + name + status */}
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
@@ -214,26 +231,61 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
           </div>
         </div>
 
-        <button
-          onClick={() => setShowClearConfirm(true)}
-          className="text-xs px-3 py-1 rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-red-600 hover:text-white transition-colors"
-        >
-          Clear Chat
-        </button>
+        {/* Right — buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            className="text-xs px-3 py-1 rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-red-600 hover:text-white transition-colors"
+          >
+            Clear Chat
+          </button>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-[#3a4952] hover:text-white transition-colors text-sm"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
-      {/* ── Clear chat confirm — dim backdrop but chat visible behind ── */}
+      {/* ── Header right-click menu ── */}
+      {headerMenu && (
+        <>
+          <div
+            className="absolute inset-0 z-40"
+            onClick={() => setHeaderMenu(false)}
+          />
+          <div
+            className="absolute top-14 right-4 z-50 bg-[#233138] rounded-lg shadow-xl overflow-hidden"
+            style={{ width: "160px", border: "1px solid #2a3942" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-[#2a3942] flex items-center gap-2"
+              onClick={() => { setShowClearConfirm(true); setHeaderMenu(false); }}
+            >
+               Clear Chat
+            </button>
+            <button
+              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-[#2a3942] flex items-center gap-2"
+              onClick={() => { onClose(); setHeaderMenu(false); }}
+            >
+              Close Chat
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Clear Chat Confirm Dialog ── */}
       {showClearConfirm && (
         <>
-          {/* Semi-transparent backdrop — blocks clicks but shows content */}
           <div
             className="absolute inset-0 z-40"
             style={{ background: "rgba(0,0,0,0.45)" }}
             onClick={() => setShowClearConfirm(false)}
           />
-          {/* Small centered card — sits above backdrop */}
           <div
-            className="absolute z-50 bg-[#202c33] rounded-xl p-5 w-68 flex flex-col gap-4 shadow-2xl"
+            className="absolute z-50 bg-[#202c33] rounded-xl p-5 flex flex-col gap-4 shadow-2xl"
             style={{
               top: "50%",
               left: "50%",
@@ -263,7 +315,7 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
         </>
       )}
 
-      {/* ── Right-click context menu ── */}
+      {/* ── Message right-click context menu ── */}
       {contextMenu?.visible && (
         <div
           className="absolute z-50 bg-[#233138] rounded-lg shadow-xl overflow-hidden"
@@ -275,7 +327,6 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Copy — available on all messages */}
           <button
             className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#2a3942] flex items-center gap-2"
             onClick={() => {
@@ -287,8 +338,6 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
           >
              Copy
           </button>
-
-          {/* Delete — only my messages */}
           {contextMenu.isMine && (
             <button
               className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#2a3942] flex items-center gap-2"
@@ -300,10 +349,12 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
         </div>
       )}
 
-      {/* Messages */}
+      {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto p-4">
         {messages.length === 0 && (
-          <p className="text-center text-[#8696a0] text-sm mt-10">No messages yet</p>
+          <p className="text-center text-[#8696a0] text-sm mt-10">
+            No messages yet. Say hello! 👋
+          </p>
         )}
         {messages.map((msg, i) => {
           const senderId = msg.sender?._id || msg.sender;
@@ -345,19 +396,23 @@ export default function ChatWindow({ receiver }: { receiver: any }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 flex gap-2 border-t border-[#2a3942]">
+      {/* ── Input ── */}
+      <div className="p-4 flex gap-2 border-t border-[#2a3942] flex-shrink-0">
         <input
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          className="flex-1 p-2 bg-[#2a3942] rounded text-white outline-none"
+          className="flex-1 p-2 bg-[#2a3942] rounded text-white outline-none placeholder-[#8696a0]"
           placeholder="Type a message..."
         />
-        <button onClick={sendMessage} className="bg-[#00a884] px-4 rounded">
+        <button
+          onClick={sendMessage}
+          className="bg-[#00a884] px-4 rounded text-white font-medium hover:bg-[#009070] transition"
+        >
           Send
         </button>
       </div>
+
     </div>
   );
 }

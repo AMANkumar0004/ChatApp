@@ -18,7 +18,7 @@ export default function ProfileModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 5MB limit
+    
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Image must be under 5MB");
       return;
@@ -79,7 +79,7 @@ export default function ProfileModal({
             onClick={() => fileInputRef.current?.click()}
             className="absolute bottom-0 right-0 w-8 h-8 bg-[#00a884] rounded-full flex items-center justify-center text-white text-sm hover:bg-[#009070]"
           >
-            📷
+            <i className="fa-solid fa-camera"></i>
           </button>
         </div>
 

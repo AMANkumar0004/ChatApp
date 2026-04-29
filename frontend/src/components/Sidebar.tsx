@@ -5,7 +5,7 @@ import InvitationPanel from "./InvitationPanel";
 import CreateGroupModal from "./CreateGroupModel";
 import ProfileModal from "./ProfileModal";
 import { toast } from "react-toastify";
-import { formatLastSeen } from "../..//utils/formatLastSeen";
+import { formatLastSeen } from "../../utils/formatLastSeen";
 
 export default function Sidebar({
   onSelectUser,
@@ -172,7 +172,7 @@ export default function Sidebar({
       localStorage.removeItem("token");
       socket.disconnect();
       window.location.href = "/";
-      toast.error("Logout Successful");
+      toast.success("Logged out successfully");
     } catch (err) {
       console.log("Logout failed:", err);
     }
@@ -240,50 +240,39 @@ export default function Sidebar({
   const activeUser = profileUser || currentUser;
 
   return (
-    <div className="h-full flex flex-col bg-[#111b21] text-white relative">
+    <div className="h-full flex flex-col bg-[#111b21] text-white">
 
-      {/* Header */}
-      <div className="px-4 py-3 bg-[#202c33] flex items-center justify-between">
-
-        {/* My avatar — click to open profile */}
-        <button
-          onClick={() => setShowProfile(true)}
-          className="w-9 h-9 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase text-sm overflow-hidden flex-shrink-0"
-        >
-          {activeUser?.profilePic ? (
-            <img src={activeUser.profilePic} className="w-full h-full object-cover" alt="profile" />
-          ) : (
-            activeUser?.username?.[0] || "?"
-          )}
-        </button>
-
+      {/* ── Top Header ── */}
+      <div className="px-4 py-3 bg-[#202c33] flex items-center justify-between flex-shrink-0">
         <p className="font-semibold text-lg">Chats</p>
-
         <div className="flex items-center gap-3">
-          <button onClick={() => setShowInvitations(!showInvitations)} className="relative">
-           <i className="fa-regular fa-bell" style={{ color: "white" }}></i>
+
+          {/* Notifications bell */}
+          <button
+            onClick={() => setShowInvitations(!showInvitations)}
+            className="relative p-1"
+          >
+            <i className="fa-regular fa-bell text-white text-base"></i>
             {pendingInvitations.length > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">
                 {pendingInvitations.length}
               </span>
             )}
           </button>
+
+          {/* Create group */}
           <button
             onClick={() => setShowCreateGroup(true)}
-            className="text-xs px-3 py-1 rounded-full bg-[#2a3942] text-white hover:bg-[#3a4942]"
+            className="flex items-center gap-1 text-xs px-3 py-1 rounded-full bg-[#2a3942] text-white hover:bg-[#3a4942] transition"
           >
-           <i className="fa-solid fa-user-group" style={{color:"white"}}></i> Group
+            <i className="fa-solid fa-user-group text-white text-xs"></i>
+            <span>Group</span>
           </button>
-          <button
-            onClick={handleLogout}
-            className="text-xs px-3 py-1 rounded-md bg-gray-400 text-white hover:bg-red-600"
-          >
-            Logout
-          </button>
+
         </div>
       </div>
 
-      {/* Invitation Panel */}
+      {/* ── Invitation Panel ── */}
       {showInvitations && (
         <InvitationPanel
           invitations={pendingInvitations}
@@ -292,8 +281,8 @@ export default function Sidebar({
         />
       )}
 
-      {/* Search Bar */}
-      <div className="px-3 py-2">
+      {/* ── Search Bar ── */}
+      <div className="px-3 py-2 flex-shrink-0">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -302,7 +291,7 @@ export default function Sidebar({
         />
       </div>
 
-      {/* Search Results */}
+      {/* ── Search Results / Contacts List ── */}
       {query.trim() ? (
         <div className="flex-1 overflow-y-auto">
           {loading && (
@@ -317,7 +306,6 @@ export default function Sidebar({
               className="flex items-center justify-between px-4 py-3 hover:bg-[#202c33]"
             >
               <div className="flex items-center gap-3">
-                {/* profile pic in search results */}
                 <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
                   {user.profilePic ? (
                     <img src={user.profilePic} className="w-full h-full object-cover" alt={user.username} />
@@ -335,10 +323,9 @@ export default function Sidebar({
           ))}
         </div>
       ) : (
-        /* Contacts List */
         <div className="flex-1 overflow-y-auto">
           {contacts.length === 0 && (
-            <p className="text-[#8696a0] text-sm px-4 py-3">
+            <p className="text-[#8696a0] text-sm px-4 py-6 text-center">
               No contacts yet. Search to find people.
             </p>
           )}
@@ -351,11 +338,10 @@ export default function Sidebar({
               <div
                 key={contact.conversationId}
                 onClick={() => onSelectUser(contact.isGroup ? contact : contact.user)}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-[#202c33] cursor-pointer"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-[#202c33] cursor-pointer border-b border-[#2a3942] border-opacity-40"
               >
-                {/* Avatar with online dot */}
-                <div className="relative">
-                  <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
+                <div className="relative flex-shrink-0">
+                  <div className="w-11 h-11 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
                     {contact.isGroup ? (
                       contact.groupName[0]
                     ) : contact.user?.profilePic ? (
@@ -364,17 +350,16 @@ export default function Sidebar({
                       contact.user?.username[0]
                     )}
                   </div>
-                  {/* Online dot — private only */}
                   {!contact.isGroup && isOnline && (
                     <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
                   )}
                 </div>
 
-                <div>
-                  <p className="font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">
                     {contact.isGroup ? contact.groupName : contact.user?.username}
                   </p>
-                  <p className="text-xs text-[#8696a0]">
+                  <p className="text-xs text-[#8696a0] truncate">
                     {contact.isGroup
                       ? `${contact.participants?.length} members`
                       : isOnline
@@ -390,7 +375,39 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* Create Group Modal */}
+      {/* ── Bottom Profile Bar (WhatsApp style) ── */}
+      <div className="px-4 py-3 bg-[#202c33] border-t border-[#2a3942] flex items-center justify-between flex-shrink-0">
+
+        {/* Left — avatar + name — click to open profile */}
+        <button
+          onClick={() => setShowProfile(true)}
+          className="flex items-center gap-3 hover:opacity-80 transition text-left"
+        >
+          <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase text-sm overflow-hidden flex-shrink-0">
+            {activeUser?.profilePic ? (
+              <img src={activeUser.profilePic} className="w-full h-full object-cover" alt="my profile" />
+            ) : (
+              activeUser?.username?.[0] || "?"
+            )}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-white leading-tight">
+              {activeUser?.username || "..."}
+            </p>
+            <p className="text-xs text-[#8696a0]">My Profile</p>
+          </div>
+        </button>
+
+        {/* Right — logout */}
+        <button
+          onClick={handleLogout}
+          className="text-xs px-3 py-1.5 rounded-lg bg-[#2a3942] text-white hover:bg-red-600 transition"
+        >
+          Logout
+        </button>
+      </div>
+
+      {/* ── Modals ── */}
       {showCreateGroup && (
         <CreateGroupModal
           contacts={contacts}
@@ -399,7 +416,6 @@ export default function Sidebar({
         />
       )}
 
-      {/* Profile Modal */}
       {showProfile && (
         <ProfileModal
           currentUser={activeUser}

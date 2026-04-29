@@ -16,18 +16,12 @@ export default function ChatLayout() {
         const currentUser = res.data.user;
 
         if (!socket.connected) socket.connect();
-
         setCurrentUser(res.data.user);
 
-        const register = () => {
-          socket.emit("register_user", currentUser._id);
-        };
+        const register = () => socket.emit("register_user", currentUser._id);
 
-        if (socket.connected) {
-          register();
-        } else {
-          socket.once("connect", register);
-        }
+        if (socket.connected) register();
+        else socket.once("connect", register);
 
         socket.on("connect", register);
       } catch (err) {
@@ -37,19 +31,13 @@ export default function ChatLayout() {
 
     registerUser();
 
-    return () => {
-      socket.off("connect");
-    };
-  }, []);
-
-  // Listen for online/offline status updates from the server
-  useEffect(() => {
-    socket.on("user_status_update", ({ userId, lastSeen }: { userId: string; lastSeen: Date | null }) => {
-      setUserStatuses((prev) => ({ ...prev, [userId]: lastSeen }));
+    socket.on("user_status_change", (data) => {
+      setUserStatuses((prev) => ({ ...prev, [data.userId]: data.lastSeen }));
     });
 
     return () => {
-      socket.off("user_status_update");
+      socket.off("connect");
+      socket.off("user_status_change");
     };
   }, []);
 
@@ -69,10 +57,17 @@ export default function ChatLayout() {
       {/* RIGHT — Chat Window */}
       <div className="flex-1">
         {selectedUser ? (
-          <ChatWindow receiver={selectedUser} />
+          <ChatWindow
+            receiver={selectedUser}
+            onClose={() => setSelectedUser(null)} 
+          />
         ) : (
-          <div className="h-full flex items-center justify-center text-[#8696a0]">
-            <p>Select a contact to start chatting</p>
+          <div className="h-full flex items-center justify-center text-[#8696a0] flex-col gap-3">
+            <div className="w-16 h-16 rounded-full bg-[#202c33] flex items-center justify-center text-3xl">
+              <i className="fa-solid fa-message"></i>
+            </div>
+            <p className="text-lg font-medium">Welcome to ChatApp</p>
+            <p className="text-sm">Select a contact to start chatting</p>
           </div>
         )}
       </div>
