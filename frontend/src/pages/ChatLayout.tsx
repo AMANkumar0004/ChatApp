@@ -9,6 +9,8 @@ export default function ChatLayout() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatuses, setUserStatuses] = useState<Record<string, Date | null>>({});
 
+  const [mobileView, setMobileView] = useState<"sidebar" | "chat">("sidebar");
+
   useEffect(() => {
     const registerUser = async () => {
       try {
@@ -41,28 +43,58 @@ export default function ChatLayout() {
     };
   }, []);
 
-  return (
-    <div className="h-screen flex bg-[#111b21] text-white">
+  const handleSelectUser = (user: any) => {
+    setSelectedUser(user);
+    setMobileView("chat");
+  };
 
-      {/* LEFT — Sidebar */}
-      <div className="w-87.5 border-r border-[#2a3942]">
+  const handleCloseChat = () => {
+    setSelectedUser(null);
+    setMobileView("sidebar");
+  };
+
+  return (
+    <div className="h-screen flex bg-[#111b21] text-white overflow-hidden">
+
+      <div
+        className={`
+          flex-shrink-0 border-r border-[#2a3942]
+          
+          /* mobile — full width, toggle visibility */
+          w-full
+          md:w-72
+          lg:w-80
+          xl:w-96
+
+          /* on mobile hide sidebar when chat is open */
+          ${mobileView === "chat" ? "hidden" : "flex flex-col"}
+          md:flex md:flex-col
+        `}
+      >
         <Sidebar
-          onSelectUser={setSelectedUser}
+          onSelectUser={handleSelectUser}
           selectedUser={selectedUser}
           currentUser={currentUser}
           userStatuses={userStatuses}
         />
       </div>
 
-      {/* RIGHT — Chat Window */}
-      <div className="flex-1">
+      <div
+        className={`
+          flex-1 flex flex-col min-w-0
+
+          /* on mobile hide chat window when sidebar is showing */
+          ${mobileView === "sidebar" ? "hidden" : "flex"}
+          md:flex
+        `}
+      >
         {selectedUser ? (
           <ChatWindow
             receiver={selectedUser}
-            onClose={() => setSelectedUser(null)} 
+            onClose={handleCloseChat}
           />
         ) : (
-          <div className="h-full flex items-center justify-center text-[#8696a0] flex-col gap-3">
+          <div className="h-full hidden md:flex items-center justify-center text-[#8696a0] flex-col gap-3">
             <div className="w-16 h-16 rounded-full bg-[#202c33] flex items-center justify-center text-3xl">
               <i className="fa-solid fa-message"></i>
             </div>

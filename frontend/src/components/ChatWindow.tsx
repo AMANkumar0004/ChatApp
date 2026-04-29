@@ -30,12 +30,10 @@ export default function ChatWindow({
 
   const isGroup = receiver?.isGroup === true;
 
-  // Auto scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Close context menu on click anywhere
   useEffect(() => {
     const handleClick = () => {
       setContextMenu(null);
@@ -193,16 +191,23 @@ export default function ChatWindow({
 
       {/* ── Header ── */}
       <div
-        className="p-4 border-b border-[#2a3942] flex items-center justify-between flex-shrink-0"
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setHeaderMenu(true);
-        }}
+        className="p-3 md:p-4 border-b border-[#2a3942] flex items-center justify-between flex-shrink-0"
+        onContextMenu={(e) => { e.preventDefault(); setHeaderMenu(true); }}
       >
-        {/* Left — avatar + name + status */}
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
+        {/* Left — back arrow (mobile) + avatar + name */}
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+
+          {/* Back arrow — mobile only */}
+          <button
+            onClick={onClose}
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#2a3942] transition text-white flex-shrink-0"
+          >
+            ←
+          </button>
+
+          {/* Avatar */}
+          <div className="relative flex-shrink-0">
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
               {isGroup ? (
                 receiver.groupName[0]
               ) : receiver.profilePic ? (
@@ -212,14 +217,16 @@ export default function ChatWindow({
               )}
             </div>
             {!isGroup && receiverStatus?.lastSeen === null && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 md:w-3 md:h-3 bg-green-400 rounded-full border-2 border-[#111b21]" />
             )}
           </div>
-          <div>
-            <p className="font-medium">
+
+          {/* Name + status */}
+          <div className="min-w-0">
+            <p className="font-medium text-sm md:text-base truncate">
               {isGroup ? receiver.groupName : receiver.username}
             </p>
-            <p className="text-xs text-[#8696a0]">
+            <p className="text-xs text-[#8696a0] truncate">
               {isGroup
                 ? `${receiver.participants?.length} members`
                 : receiverStatus?.lastSeen === null
@@ -232,29 +239,34 @@ export default function ChatWindow({
         </div>
 
         {/* Right — buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
           <button
             onClick={() => setShowClearConfirm(true)}
-            className="text-xs px-3 py-1 rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-red-600 hover:text-white transition-colors"
+            className="hidden sm:block text-xs px-2 md:px-3 py-1 rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-red-600 hover:text-white transition-colors"
           >
-            Clear Chat
+            Clear
           </button>
+          {/* Close button — desktop only (mobile uses back arrow) */}
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-[#3a4952] hover:text-white transition-colors text-sm"
+            className="hidden md:flex w-7 h-7 items-center justify-center rounded-md bg-[#2a3942] text-[#8696a0] hover:bg-[#3a4952] hover:text-white transition-colors text-sm"
           >
             ✕
+          </button>
+          {/* 3-dot menu — mobile */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setHeaderMenu(!headerMenu); }}
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#2a3942] transition text-[#8696a0]"
+          >
+            ⋮
           </button>
         </div>
       </div>
 
-      {/* ── Header right-click menu ── */}
+      {/* ── Header menu (right-click on desktop, 3-dot on mobile) ── */}
       {headerMenu && (
         <>
-          <div
-            className="absolute inset-0 z-40"
-            onClick={() => setHeaderMenu(false)}
-          />
+          <div className="absolute inset-0 z-40" onClick={() => setHeaderMenu(false)} />
           <div
             className="absolute top-14 right-4 z-50 bg-[#233138] rounded-lg shadow-xl overflow-hidden"
             style={{ width: "160px", border: "1px solid #2a3942" }}
@@ -270,13 +282,13 @@ export default function ChatWindow({
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-[#2a3942] flex items-center gap-2"
               onClick={() => { onClose(); setHeaderMenu(false); }}
             >
-              Close Chat
+               Close Chat
             </button>
           </div>
         </>
       )}
 
-      {/* ── Clear Chat Confirm Dialog ── */}
+      {/* ── Clear Chat Confirm ── */}
       {showClearConfirm && (
         <>
           <div
@@ -286,12 +298,7 @@ export default function ChatWindow({
           />
           <div
             className="absolute z-50 bg-[#202c33] rounded-xl p-5 flex flex-col gap-4 shadow-2xl"
-            style={{
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "280px",
-            }}
+            style={{ top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "280px" }}
           >
             <p className="text-white font-semibold text-sm">Clear all messages?</p>
             <p className="text-[#8696a0] text-xs leading-relaxed">
@@ -319,12 +326,7 @@ export default function ChatWindow({
       {contextMenu?.visible && (
         <div
           className="absolute z-50 bg-[#233138] rounded-lg shadow-xl overflow-hidden"
-          style={{
-            top: contextMenu.y,
-            left: contextMenu.x,
-            width: "150px",
-            border: "1px solid #2a3942",
-          }}
+          style={{ top: contextMenu.y, left: contextMenu.x, width: "150px", border: "1px solid #2a3942" }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -350,7 +352,7 @@ export default function ChatWindow({
       )}
 
       {/* ── Messages ── */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-3 md:p-4">
         {messages.length === 0 && (
           <p className="text-center text-[#8696a0] text-sm mt-10">
             No messages yet. Say hello! 👋
@@ -374,10 +376,11 @@ export default function ChatWindow({
                 style={{
                   padding: "8px 12px",
                   borderRadius: "8px",
-                  maxWidth: "70%",
+                  maxWidth: "75%",
                   backgroundColor: isMine ? "#005c4b" : "#202c33",
                   color: "white",
                   cursor: "context-menu",
+                  wordBreak: "break-word",
                 }}
               >
                 {isGroup && !isMine && (
@@ -385,7 +388,7 @@ export default function ChatWindow({
                     {msg.sender?.username || ""}
                   </p>
                 )}
-                <p>{msg.text}</p>
+                <p style={{ fontSize: "14px" }}>{msg.text}</p>
                 <p style={{ fontSize: "10px", color: "#8696a0", textAlign: "right", marginTop: "2px" }}>
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </p>
@@ -397,17 +400,17 @@ export default function ChatWindow({
       </div>
 
       {/* ── Input ── */}
-      <div className="p-4 flex gap-2 border-t border-[#2a3942] flex-shrink-0">
+      <div className="p-2 md:p-4 flex gap-2 border-t border-[#2a3942] flex-shrink-0">
         <input
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          className="flex-1 p-2 bg-[#2a3942] rounded text-white outline-none placeholder-[#8696a0]"
+          className="flex-1 p-2 md:p-3 bg-[#2a3942] rounded-lg text-white outline-none placeholder-[#8696a0] text-sm"
           placeholder="Type a message..."
         />
         <button
           onClick={sendMessage}
-          className="bg-[#00a884] px-4 rounded text-white font-medium hover:bg-[#009070] transition"
+          className="bg-[#00a884] px-3 md:px-4 py-2 rounded-lg text-white font-medium hover:bg-[#009070] transition text-sm"
         >
           Send
         </button>
