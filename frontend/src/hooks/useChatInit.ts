@@ -53,9 +53,12 @@ export function useChatInit(receiver: any) {
 
         socket.off("receive_message");
         socket.on("receive_message", (data) => {
+          console.log("Received message:", data);
           setMessages((prev) => [...prev, data]);
-          if (data.senderId !== userRef.current._id) playNotification();
-          
+          console.log("Current user:", userRef.current);
+          console.log("Message sender:", data.senderId);
+          if (data.sender._id !== userRef.current._id) playNotification();
+
         });
 
         socket.off("message_deleted");
