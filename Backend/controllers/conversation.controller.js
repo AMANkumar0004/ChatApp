@@ -6,21 +6,22 @@ export const getContacts = async (req, res) => {
   try {
     const conversations = await Conversation.find({
       participants: req.user._id,
-    }).populate("participants", "username email profilePic");
+    })
+      .populate("participants", "username email profilePic")
+      .populate("lastMessage", "text fileType createdAt");
 
     const contacts = conversations.map((conv) => {
       if (conv.type === "group") {
-        // return group as a contact
         return {
           conversationId: conv._id,
           isGroup: true,
           groupName: conv.groupInfo.name,
           groupAdmin: conv.groupInfo.admin,
           participants: conv.participants,
+          lastMessage: conv.lastMessage || null,
         };
       }
 
-      // private conversation — return the other user
       const other = conv.participants.find(
         (p) => p._id.toString() !== req.user._id.toString()
       );
@@ -28,6 +29,7 @@ export const getContacts = async (req, res) => {
         conversationId: conv._id,
         isGroup: false,
         user: other,
+        lastMessage: conv.lastMessage || null,
       };
     });
 
@@ -74,9 +76,6 @@ export const getMessages = async (req, res) => {
   }
 };
 
-
-
-
 // POST /api/conversations/group
 export const createGroup = async (req, res) => {
   try {
@@ -86,7 +85,6 @@ export const createGroup = async (req, res) => {
     if (!name || !memberIds || memberIds.length === 0) {
       return res.status(400).json({ message: "Group name and members are required" });
     }
-
 
     const participants = [adminId, ...memberIds];
 
@@ -106,5 +104,3 @@ export const createGroup = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
-

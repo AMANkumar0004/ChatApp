@@ -7,7 +7,7 @@ export default function MessageContextMenu({
 }: {
   contextMenu: { x: number; y: number; msgId: string; isMine: boolean } | null;
   messages: any[];
-  onCopy: (text: string) => void;
+  onCopy: (text: string) => void; 
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {

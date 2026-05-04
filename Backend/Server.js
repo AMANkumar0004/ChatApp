@@ -9,6 +9,7 @@ import userRoutes from "./routes/user.routes.js";
 
 import { Message } from "./models/Messages.js";
 import { User } from "./models/User.js";
+import { Conversation } from "./models/Conversation.js";
 
 import authRoutes from "./routes/auth.routes.js";
 import conversationRoutes from "./routes/conversation.routes.js";
@@ -66,7 +67,7 @@ io.on("connection", async (socket) => {
     console.log(`User ${socket.id} joined room: ${conversationId}`);
   });
 
-  // GROUP CREATED — notify all members
+  // GROUP CREATED 
   socket.on("group_created", (data) => {
     const { conversation, memberIds } = data;
     memberIds.forEach((memberId) => {
@@ -126,16 +127,30 @@ io.on("connection", async (socket) => {
 
       await message.populate("sender", "username profilePic");
 
+      
+      await Conversation.findByIdAndUpdate(conversationId, {
+        lastMessage: message._id,
+      });
+
+     
       if (receiverId) {
-        // private chat — emit to sender and receiver only
         const senderSocketId = onlineUsers.get(senderId);
         const receiverSocketId = onlineUsers.get(receiverId);
         if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
         if (receiverSocketId) io.to(receiverSocketId).emit("receive_message", message);
       } else {
-        // group chat — emit to everyone in the room
         io.to(conversationId).emit("receive_message", message);
       }
+
+      
+      io.to(conversationId).emit("last_message_update", {
+        conversationId,
+        lastMessage: {
+          text: message.text,
+          fileType: message.fileType,
+          createdAt: message.createdAt,
+        },
+      });
     } catch (err) {
       console.error("Message error:", err.message);
     }

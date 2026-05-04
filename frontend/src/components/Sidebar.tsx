@@ -6,7 +6,31 @@ import CreateGroupModal from "./CreateGroupModel";
 import ProfileModal from "./ProfileModal";
 import { toast } from "react-toastify";
 import { formatLastSeen } from "../../utils/formatLastSeen";
-import"../index.css"
+import "../index.css";
+
+function formatMessageTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return date.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function formatLastMessageText(lastMessage: any): string {
+  if (!lastMessage) return "";
+  if (lastMessage.text) return lastMessage.text;
+  if (lastMessage.fileType === "image") return "📷 Photo";
+  if (lastMessage.fileType === "pdf") return "📄 PDF";
+  if (lastMessage.fileType === "word") return "📝 Document";
+  return "📎 File";
+}
 
 export default function Sidebar({
   onSelectUser,
@@ -91,11 +115,23 @@ export default function Sidebar({
       ]);
     });
 
+    // Update last message preview in real time
+    socket.on("last_message_update", ({ conversationId, lastMessage }) => {
+      setContacts((prev) =>
+        prev.map((c) =>
+          c.conversationId.toString() === conversationId.toString()
+            ? { ...c, lastMessage }
+            : c
+        )
+      );
+    });
+
     return () => {
       socket.off("receive_invitation");
       socket.off("invitation_accepted");
       socket.off("invitation_rejected");
       socket.off("added_to_group");
+      socket.off("last_message_update");
     };
   }, [currentUser]);
 
@@ -247,8 +283,6 @@ export default function Sidebar({
       <div className="px-4 py-3 bg-[#202c33] flex items-center justify-between flex-shrink-0">
         <p className="font-semibold text-lg">Chats</p>
         <div className="flex items-center gap-3">
-
-          {/* Notifications bell */}
           <button
             onClick={() => setShowInvitations(!showInvitations)}
             className="relative p-1"
@@ -260,8 +294,6 @@ export default function Sidebar({
               </span>
             )}
           </button>
-
-          {/* Create group */}
           <button
             onClick={() => setShowCreateGroup(true)}
             className="flex items-center gap-1 text-xs px-3 py-1 rounded-full bg-[#2a3942] text-white hover:bg-[#3a4942] transition"
@@ -269,7 +301,6 @@ export default function Sidebar({
             <i className="fa-solid fa-user-group text-white text-xs"></i>
             <span>Group</span>
           </button>
-
         </div>
       </div>
 
@@ -294,7 +325,7 @@ export default function Sidebar({
 
       {/* ── Search Results / Contacts List ── */}
       {query.trim() ? (
-        <div className="flex-1  scroll-container overflow-y-auto">
+        <div className="flex-1 scroll-container overflow-y-auto">
           {loading && (
             <p className="text-[#8696a0] text-sm px-4 py-3">Searching...</p>
           )}
@@ -341,6 +372,7 @@ export default function Sidebar({
                 onClick={() => onSelectUser(contact.isGroup ? contact : contact.user)}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-[#202c33] cursor-pointer border-b border-[#2a3942] border-opacity-40"
               >
+                {/* Avatar */}
                 <div className="relative flex-shrink-0">
                   <div className="w-11 h-11 rounded-full bg-[#00a884] flex items-center justify-center font-bold uppercase overflow-hidden">
                     {contact.isGroup ? (
@@ -356,12 +388,22 @@ export default function Sidebar({
                   )}
                 </div>
 
+                {/* Name + last message */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">
-                    {contact.isGroup ? contact.groupName : contact.user?.username}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium truncate">
+                      {contact.isGroup ? contact.groupName : contact.user?.username}
+                    </p>
+                    {contact.lastMessage?.createdAt && (
+                      <span className="text-xs text-[#8696a0] flex-shrink-0 ml-2">
+                        {formatMessageTime(contact.lastMessage.createdAt)}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-[#8696a0] truncate">
-                    {contact.isGroup
+                    {contact.lastMessage
+                      ? formatLastMessageText(contact.lastMessage)
+                      : contact.isGroup
                       ? `${contact.participants?.length} members`
                       : isOnline
                       ? "online"
@@ -376,10 +418,8 @@ export default function Sidebar({
         </div>
       )}
 
-     
+      {/* ── Bottom Bar ── */}
       <div className="px-4 py-3 bg-[#202c33] border-t border-[#2a3942] flex items-center justify-between flex-shrink-0">
-
-        {/* Left — avatar + name — click to open profile */}
         <button
           onClick={() => setShowProfile(true)}
           className="flex items-center gap-3 hover:opacity-80 transition text-left"
@@ -398,8 +438,6 @@ export default function Sidebar({
             <p className="text-xs text-[#8696a0]">My Profile</p>
           </div>
         </button>
-
-        {/* Right — logout */}
         <button
           onClick={handleLogout}
           className="text-xs px-3 py-1.5 rounded-lg bg-[#2a3942] text-white hover:bg-red-600 transition"
@@ -424,7 +462,6 @@ export default function Sidebar({
           onUpdate={handleProfileUpdate}
         />
       )}
-
     </div>
   );
 }

@@ -50,7 +50,6 @@ export default function FileMessage({ msg }: { msg: any }) {
             {fileType?.toUpperCase()} {fileSize ? `· ${formatSize(fileSize)}` : ""}
           </p>
         </div>
-        <span className="text-[#8696a0] text-lg flex-shrink-0">⬇</span>
       </a>
       {msg.text && <p className="mt-1 text-sm">{msg.text}</p>}
     </div>
