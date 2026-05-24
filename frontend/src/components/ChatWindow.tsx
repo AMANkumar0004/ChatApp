@@ -32,7 +32,7 @@ export default function ChatWindow({
   const isGroup = receiver?.isGroup === true;
 
   // ── Custom hooks ──
-  const { messages, setMessages, user, conversationId, receiverStatus } =
+  const { messages, setMessages, user, conversationId, receiverStatus , rateLimitSeconds} =
     useChatInit(receiver);
 
   const {
@@ -161,7 +161,8 @@ export default function ChatWindow({
         onSend={sendMessage}
         onFileSelect={handleFileSelect}
         onClearFile={clearSelectedFile}
-      />
+        rateLimitSeconds={rateLimitSeconds}
+      />                               
 
     </div>
   );

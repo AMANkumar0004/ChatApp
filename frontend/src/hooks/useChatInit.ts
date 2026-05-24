@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
 import { api } from "../services/api";
 import { useNotificationSound } from "./useNotificationSound";
-
+import { toast } from "react-toastify";
 export function useChatInit(receiver: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -10,13 +10,11 @@ export function useChatInit(receiver: any) {
   const [receiverStatus, setReceiverStatus] = useState<{
     lastSeen: Date | null;
   } | null>(null);
+const [rateLimitSeconds, setRateLimitSeconds] = useState<number>(0);
+const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { playNotification } = useNotificationSound();
   const convIdRef = useRef<string | null>(null);
-
-  // useRef so the receive_message listener always has the latest user value
-  // without needing to re-register the listener every time user state updates
   const userRef = useRef<any>(null);
-
   const isGroup = receiver?.isGroup === true;
 
   useEffect(() => {
@@ -26,9 +24,6 @@ export function useChatInit(receiver: any) {
         const currentUser = res.data.user;
         setUser(currentUser);
         userRef.current = currentUser;
-        console.log( currentUser._id);
-        console.log("Receiver ID:", receiver._id);
-        
 
         let convId: string;
 
@@ -63,23 +58,15 @@ export function useChatInit(receiver: any) {
         }
 
         socket.on("connect", () =>
-          socket.emit("register_user", currentUser._id),
+          socket.emit("register_user", currentUser._id)
         );
 
         socket.off("receive_message");
         socket.on("receive_message", (data) => {
-          console.log("Received message:", data);
           setMessages((prev) => [...prev, data]);
-          console.log("Current user:", userRef.current);
-          console.log("Message sender:", data.sender._id);
           const isOwnMessage = data.sender._id === userRef.current._id;
-          console.log("Is own message?", isOwnMessage);
-          const isActiveConversation =
-            data.conversationId === convIdRef.current;
-            console.log("Active conversation ID:", convIdRef.current);
-            console.log("Is active conversation?", isActiveConversation);
+          const isActiveConversation = data.conversationId === convIdRef.current;
           const windowUnfocused = !window.document.hasFocus();
-
           if (!isOwnMessage && (!isActiveConversation || windowUnfocused)) {
             playNotification();
           }
@@ -94,6 +81,32 @@ export function useChatInit(receiver: any) {
         socket.on("chat_cleared", ({ conversationId: clearedId }) => {
           if (clearedId === convId) setMessages([]);
         });
+
+       socket.off("rate_limited");
+socket.on("rate_limited", (data: { message: string; ttl: number }) => {
+  // Show toast once
+  toast.error(`Too many messages. 
+     You can send again in ${data.ttl}s`, {
+    toastId: "rate-limit", // prevents duplicate toasts
+  });
+
+  // Start countdown
+  setRateLimitSeconds(data.ttl);
+  
+  // Clear any existing timer
+  if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+  
+  rateLimitTimerRef.current = setInterval(() => {
+    setRateLimitSeconds((prev) => {
+      if (prev <= 1) {
+        clearInterval(rateLimitTimerRef.current!);
+        rateLimitTimerRef.current = null;
+        return 0;
+      }
+      return prev - 1;
+    });
+  }, 1000);
+});
 
         socket.off("user_status_change");
         if (!isGroup) {
@@ -116,8 +129,10 @@ export function useChatInit(receiver: any) {
       socket.off("user_status_change");
       socket.off("message_deleted");
       socket.off("chat_cleared");
-    };
-  }, [isGroup ? receiver.conversationId : receiver._id]);
+      socket.off("rate_limited"); 
+      if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+  };
+ }, [isGroup ? receiver.conversationId : receiver._id]);
 
-  return { messages, setMessages, user, conversationId, receiverStatus };
+  return { messages, setMessages, user, conversationId, receiverStatus, rateLimitSeconds }; 
 }

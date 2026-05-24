@@ -16,6 +16,9 @@ import conversationRoutes from "./routes/conversation.routes.js";
 import invitationRoutes from "./routes/invitation.routes.js";
 import messageRoutes from "./routes/messages.route.js";
 
+import { isRateLimited } from "./middleware/rateLimiter.js";
+
+
 dotenv.config();
 const PORT = process.env.PORT || 5000;
 
@@ -30,6 +33,7 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
+app.set('trust proxy', 1);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -108,53 +112,68 @@ io.on("connection", async (socket) => {
     }
   });
 
+
   // SEND MESSAGE
-  socket.on("send_message", async (data) => {
-    try {
-      const { conversationId, text, senderId, receiverId, fileUrl, fileName, fileType, fileSize } = data;
+socket.on("send_message", async (data) => {
+  try {
+    const { conversationId, text, senderId, receiverId, fileUrl, fileName, fileType, fileSize } = data;
 
-      if (!conversationId || !senderId) return;
+    if (!conversationId || !senderId) return;
 
-      const message = await Message.create({
-        conversationId,
-        sender: senderId,
-        text: text || "",
-        fileUrl: fileUrl || null,
-        fileName: fileName || null,
-        fileType: fileType || null,
-        fileSize: fileSize || null,
+    // ✅ Rate limit check — 10 messages per 10 seconds per user
+    const { limited, remaining, ttl } = await isRateLimited(
+      `msg:${senderId}`,  // unique key per user
+      10,                 // max 3 messages
+      10                  // per 10 seconds
+    );
+
+    if (limited) {
+      // Send error back to ONLY the sender
+      socket.emit("rate_limited", {
+        message: `Too many messages. Please wait ${ttl} seconds.`,
+        ttl,
       });
-
-      await message.populate("sender", "username profilePic");
-
-      
-      await Conversation.findByIdAndUpdate(conversationId, {
-        lastMessage: message._id,
-      });
-
-     
-      if (receiverId) {
-        const senderSocketId = onlineUsers.get(senderId);
-        const receiverSocketId = onlineUsers.get(receiverId);
-        if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
-        if (receiverSocketId) io.to(receiverSocketId).emit("receive_message", message);
-      } else {
-        io.to(conversationId).emit("receive_message", message);
-      }
-
-      
-      io.to(conversationId).emit("last_message_update", {
-        conversationId,
-        lastMessage: {
-          text: message.text,
-          fileType: message.fileType,
-          createdAt: message.createdAt,
-        },
-      });
-    } catch (err) {
-      console.error("Message error:", err.message);
+      return; // stop — don't save or broadcast
     }
-  });
+
+    const message = await Message.create({
+      conversationId,
+      sender: senderId,
+      text: text || "",
+      fileUrl: fileUrl || null,
+      fileName: fileName || null,
+      fileType: fileType || null,
+      fileSize: fileSize || null,
+    });
+
+    await message.populate("sender", "username profilePic");
+
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessage: message._id,
+    });
+
+    if (receiverId) {
+      const senderSocketId = onlineUsers.get(senderId);
+      const receiverSocketId = onlineUsers.get(receiverId);
+      if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
+      if (receiverSocketId) io.to(receiverSocketId).emit("receive_message", message);
+    } else {
+      io.to(conversationId).emit("receive_message", message);
+    }
+
+    io.to(conversationId).emit("last_message_update", {
+      conversationId,
+      lastMessage: {
+        text: message.text,
+        fileType: message.fileType,
+        createdAt: message.createdAt,
+      },
+    });
+
+  } catch (err) {
+    console.error("Message error:", err.message);
+  }
+});
 
   // DISCONNECT
   socket.on("disconnect", async () => {
