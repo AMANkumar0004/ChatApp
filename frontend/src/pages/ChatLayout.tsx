@@ -12,24 +12,36 @@ export default function ChatLayout() {
   const [mobileView, setMobileView] = useState<"sidebar" | "chat">("sidebar");
 
   useEffect(() => {
-    const registerUser = async () => {
-      try {
-        const res = await api.get("/auth/me");
-        const currentUser = res.data.user;
+ const registerUser = async () => {
+  try {
+    const res = await api.get("/auth/me");
+    const currentUser = res.data.user;
 
-        if (!socket.connected) socket.connect();
-        setCurrentUser(res.data.user);
+    if (!socket.connected) socket.connect();
+    setCurrentUser(res.data.user);
 
-        const register = () => socket.emit("register_user", currentUser._id);
+    const register = () => socket.emit("register_user", currentUser._id);
+    if (socket.connected) register();
+    else socket.once("connect", register);
+    socket.on("connect", register);
 
-        if (socket.connected) register();
-        else socket.once("connect", register);
+    // ✅ Fetch who's online right now from Redis
+    const onlineRes = await api.get("/users/online");
+    const onlineUserIds: string[] = onlineRes.data.onlineUserIds;
 
-        socket.on("connect", register);
-      } catch (err) {
-        console.log("Failed to register user:", err);
-      }
-    };
+    // ✅ Build initial userStatuses — null means online
+    const initialStatuses: Record<string, Date | null> = {};
+    onlineUserIds.forEach(id => {
+      initialStatuses[id] = null; // null = online in your system
+    });
+    setUserStatuses(initialStatuses);
+
+  } catch (err: any) {
+    if (err.response?.status !== 401) {
+      console.log("Failed to register user:", err);
+    }
+  }
+};
 
     registerUser();
 

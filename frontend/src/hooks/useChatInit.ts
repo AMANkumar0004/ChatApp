@@ -82,6 +82,19 @@ const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
           if (clearedId === convId) setMessages([]);
         });
 
+        socket.off("session_kicked");
+socket.on("session_kicked", () => {
+  localStorage.removeItem("token");
+  toast.error("You were logged in from another device.", {
+    position: "top-center",
+    theme: "dark",
+    autoClose: 3000,
+  });
+  setTimeout(() => {
+    window.location.href = "/";
+  }, 3000);
+});
+
        socket.off("rate_limited");
 socket.on("rate_limited", (data: { message: string; ttl: number }) => {
   // Show toast once
@@ -130,6 +143,7 @@ socket.on("rate_limited", (data: { message: string; ttl: number }) => {
       socket.off("message_deleted");
       socket.off("chat_cleared");
       socket.off("rate_limited"); 
+      socket.off("session_kicked");
       if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
   };
  }, [isGroup ? receiver.conversationId : receiver._id]);

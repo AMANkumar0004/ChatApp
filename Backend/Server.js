@@ -6,18 +6,15 @@ import cookieParser from "cookie-parser";
 import http from "http";
 import { Server } from "socket.io";
 import userRoutes from "./routes/user.routes.js";
-
 import { Message } from "./models/Messages.js";
 import { User } from "./models/User.js";
 import { Conversation } from "./models/Conversation.js";
-
 import authRoutes from "./routes/auth.routes.js";
 import conversationRoutes from "./routes/conversation.routes.js";
 import invitationRoutes from "./routes/invitation.routes.js";
 import messageRoutes from "./routes/messages.route.js";
-
 import { isRateLimited } from "./middleware/rateLimiter.js";
-
+import redis from "./config/redis.js";
 
 dotenv.config();
 const PORT = process.env.PORT || 5000;
@@ -51,141 +48,180 @@ const io = new Server(server, {
   },
 });
 
-const onlineUsers = new Map();
+// ✅ Helper functions — replace all onlineUsers.get/set/delete
+// Keeps socket code clean and readable
+
+// Store userId → socketId in Redis Hash
+async function setUserOnline(userId, socketId) {
+  await redis.hset('onlineUsers', userId, socketId);
+}
+
+// Get socketId for a userId
+async function getUserSocket(userId) {
+  return await redis.hget('onlineUsers', userId);
+}
+
+// Remove user from online hash
+async function setUserOffline(userId) {
+  await redis.hdel('onlineUsers', userId);
+}
+
+// Find userId by socketId — used in disconnect
+// Returns userId or null
+async function getUserIdBySocket(socketId) {
+  // HGETALL returns { userId: socketId, userId: socketId ... }
+  const all = await redis.hgetall('onlineUsers');
+  if (!all) return null;
+  const entry = Object.entries(all).find(([, sId]) => sId === socketId);
+  return entry ? entry[0] : null;
+}
 
 io.on("connection", async (socket) => {
   console.log("User connected:", socket.id);
 
+  // REGISTER USER
   socket.on("register_user", async (userId) => {
-    onlineUsers.set(userId, socket.id);
+    // ✅ Redis instead of Map
+    await setUserOnline(userId, socket.id);
     console.log("Registered:", userId, "->", socket.id);
     await User.findByIdAndUpdate(userId, { lastSeen: null });
     io.emit("user_status_change", { userId, lastSeen: null });
   });
 
+  // JOIN CONVERSATION
   socket.on("join_conversation", (conversationId) => {
-    if (!conversationId) {
-      return console.log("No conversationId provided");
-    }
+    if (!conversationId) return console.log("No conversationId provided");
     socket.join(conversationId);
     console.log(`User ${socket.id} joined room: ${conversationId}`);
   });
 
-  // GROUP CREATED 
-  socket.on("group_created", (data) => {
+  // GROUP CREATED
+  socket.on("group_created", async (data) => {
     const { conversation, memberIds } = data;
-    memberIds.forEach((memberId) => {
-      const memberSocketId = onlineUsers.get(memberId);
+    for (const memberId of memberIds) {
+      // ✅ Redis instead of Map
+      const memberSocketId = await getUserSocket(memberId);
       if (memberSocketId) {
         io.to(memberSocketId).emit("added_to_group", conversation);
       }
-    });
+    }
   });
 
   // SEND INVITATION
-  socket.on("send_invitation", (data) => {
+  socket.on("send_invitation", async (data) => {
     const { receiverId, invitation } = data;
-    console.log("send_invitation received, receiverId:", receiverId);
-    console.log("Online users:", [...onlineUsers.entries()]);
-    const receiverSocketId = onlineUsers.get(receiverId);
-    console.log("Receiver socket:", receiverSocketId);
+    // ✅ Redis instead of Map
+    const receiverSocketId = await getUserSocket(receiverId);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("receive_invitation", invitation);
     }
   });
 
   // ACCEPT INVITATION
-  socket.on("accept_invitation", (data) => {
+  socket.on("accept_invitation", async (data) => {
     const { senderId, conversation } = data;
-    const senderSocketId = onlineUsers.get(senderId);
+    // ✅ Redis instead of Map
+    const senderSocketId = await getUserSocket(senderId);
     if (senderSocketId) {
       io.to(senderSocketId).emit("invitation_accepted", conversation);
     }
   });
 
   // REJECT INVITATION
-  socket.on("reject_invitation", (data) => {
+  socket.on("reject_invitation", async (data) => {
     const { senderId } = data;
-    const senderSocketId = onlineUsers.get(senderId);
+    // ✅ Redis instead of Map
+    const senderSocketId = await getUserSocket(senderId);
     if (senderSocketId) {
       io.to(senderSocketId).emit("invitation_rejected");
     }
   });
 
-
   // SEND MESSAGE
-socket.on("send_message", async (data) => {
-  try {
-    const { conversationId, text, senderId, receiverId, fileUrl, fileName, fileType, fileSize } = data;
+  socket.on("send_message", async (data) => {
+    try {
+      const { conversationId, text, senderId, receiverId, fileUrl, fileName, fileType, fileSize } = data;
 
-    if (!conversationId || !senderId) return;
+      if (!conversationId || !senderId) return;
 
-    // ✅ Rate limit check — 10 messages per 10 seconds per user
-    const { limited, remaining, ttl } = await isRateLimited(
-      `msg:${senderId}`,  // unique key per user
-      10,                 // max 3 messages
-      10                  // per 10 seconds
-    );
+      // Session kick check
+      const cookieHeader = socket.handshake.headers.cookie;
+      const cookieToken = cookieHeader
+        ?.split(';')
+        ?.find(c => c.trim().startsWith('token='))
+        ?.split('=')[1];
 
-    if (limited) {
-      // Send error back to ONLY the sender
-      socket.emit("rate_limited", {
-        message: `Too many messages. Please wait ${ttl} seconds.`,
-        ttl,
+      const activeToken = await redis.get(`activeSession:${senderId}`);
+
+      if (activeToken && cookieToken && activeToken !== cookieToken) {
+        socket.emit("session_kicked");
+        socket.disconnect();
+        return;
+      }
+
+      // Rate limit check
+      const { limited, ttl } = await isRateLimited(`msg:${senderId}`, 10, 10);
+      if (limited) {
+        socket.emit("rate_limited", {
+          message: `Too many messages. Please wait ${ttl} seconds.`,
+          ttl,
+        });
+        return;
+      }
+
+      const message = await Message.create({
+        conversationId,
+        sender: senderId,
+        text: text || "",
+        fileUrl: fileUrl || null,
+        fileName: fileName || null,
+        fileType: fileType || null,
+        fileSize: fileSize || null,
       });
-      return; // stop — don't save or broadcast
+
+      await message.populate("sender", "username profilePic");
+
+      await Conversation.findByIdAndUpdate(conversationId, {
+        lastMessage: message._id,
+      });
+
+      if (receiverId) {
+        // ✅ Redis instead of Map
+        const senderSocketId = await getUserSocket(senderId);
+        const receiverSocketId = await getUserSocket(receiverId);
+        if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
+        if (receiverSocketId) io.to(receiverSocketId).emit("receive_message", message);
+      } else {
+        io.to(conversationId).emit("receive_message", message);
+      }
+
+      io.to(conversationId).emit("last_message_update", {
+        conversationId,
+        lastMessage: {
+          text: message.text,
+          fileType: message.fileType,
+          createdAt: message.createdAt,
+        },
+      });
+
+    } catch (err) {
+      console.error("Message error:", err.message);
     }
-
-    const message = await Message.create({
-      conversationId,
-      sender: senderId,
-      text: text || "",
-      fileUrl: fileUrl || null,
-      fileName: fileName || null,
-      fileType: fileType || null,
-      fileSize: fileSize || null,
-    });
-
-    await message.populate("sender", "username profilePic");
-
-    await Conversation.findByIdAndUpdate(conversationId, {
-      lastMessage: message._id,
-    });
-
-    if (receiverId) {
-      const senderSocketId = onlineUsers.get(senderId);
-      const receiverSocketId = onlineUsers.get(receiverId);
-      if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
-      if (receiverSocketId) io.to(receiverSocketId).emit("receive_message", message);
-    } else {
-      io.to(conversationId).emit("receive_message", message);
-    }
-
-    io.to(conversationId).emit("last_message_update", {
-      conversationId,
-      lastMessage: {
-        text: message.text,
-        fileType: message.fileType,
-        createdAt: message.createdAt,
-      },
-    });
-
-  } catch (err) {
-    console.error("Message error:", err.message);
-  }
-});
+  });
 
   // DISCONNECT
   socket.on("disconnect", async () => {
     const now = new Date();
-    for (const [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        await User.findByIdAndUpdate(userId, { lastSeen: now });
-        io.emit("user_status_change", { userId, lastSeen: now });
-        break;
-      }
+
+    // ✅ Redis instead of Map — find userId by socketId
+    const userId = await getUserIdBySocket(socket.id);
+
+    if (userId) {
+      await setUserOffline(userId);
+      await User.findByIdAndUpdate(userId, { lastSeen: now });
+      io.emit("user_status_change", { userId, lastSeen: now });
     }
+
     console.log("User disconnected:", socket.id);
   });
 

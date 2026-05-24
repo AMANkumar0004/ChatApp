@@ -1,4 +1,5 @@
 import axios from "axios";
+import { toast } from "react-toastify";
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
@@ -12,3 +13,29 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const data = error.response.data;
+
+      if (data.kicked) {
+        // ✅ Clear everything local
+        localStorage.removeItem("token");
+
+        toast.error("You were logged in from another device.", {
+          position: "top-center",
+          theme: "dark",
+          autoClose: 3000,
+        });
+
+        // ✅ Small delay so toast is visible before redirect
+        setTimeout(() => {
+          window.location.href = "/"; // hard redirect — clears all React state
+        }, 3000);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
