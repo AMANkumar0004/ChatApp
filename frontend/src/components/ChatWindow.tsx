@@ -32,7 +32,7 @@ export default function ChatWindow({
   const isGroup = receiver?.isGroup === true;
 
   // ── Custom hooks ──
-  const { messages, setMessages, user, conversationId, receiverStatus , rateLimitSeconds} =
+  const { messages, setMessages, user, conversationId, receiverStatus} =
     useChatInit(receiver);
 
   const {
