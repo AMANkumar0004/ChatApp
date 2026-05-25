@@ -20,21 +20,23 @@ export default function ChatLayout() {
     if (!socket.connected) socket.connect();
     setCurrentUser(res.data.user);
 
-    const register = () => socket.emit("register_user", currentUser._id);
+    const register = async () => {
+      socket.emit("register_user", currentUser._id);
+      
+      // ✅ Fetch AFTER registering — so current user is in Redis
+      await new Promise(resolve => setTimeout(resolve, 500)); // small delay for Redis to update
+      const onlineRes = await api.get("/users/online");
+      const onlineUserIds: string[] = onlineRes.data.onlineUserIds;
+      const initialStatuses: Record<string, Date | null> = {};
+      onlineUserIds.forEach(id => {
+        initialStatuses[id] = null;
+      });
+      setUserStatuses(initialStatuses);
+    };
+
     if (socket.connected) register();
     else socket.once("connect", register);
     socket.on("connect", register);
-
-    // ✅ Fetch who's online right now from Redis
-    const onlineRes = await api.get("/users/online");
-    const onlineUserIds: string[] = onlineRes.data.onlineUserIds;
-
-    // ✅ Build initial userStatuses — null means online
-    const initialStatuses: Record<string, Date | null> = {};
-    onlineUserIds.forEach(id => {
-      initialStatuses[id] = null; // null = online in your system
-    });
-    setUserStatuses(initialStatuses);
 
   } catch (err: any) {
     if (err.response?.status !== 401) {
