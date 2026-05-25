@@ -153,6 +153,9 @@ io.on("connection", async (socket) => {
 
       const activeToken = await redis.get(`activeSession:${senderId}`);
 
+
+      console.log("Cookie header:", socket.handshake.headers.cookie ? "EXISTS" : "MISSING");
+console.log("Active token in Redis:", activeToken ? "EXISTS" : "MISSING");
       if (activeToken && cookieToken && activeToken !== cookieToken) {
         socket.emit("session_kicked");
         socket.disconnect();

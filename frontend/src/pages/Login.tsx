@@ -26,7 +26,11 @@ export default function Login() {
       });
       setTimeout(() => navigate("/chat"), 1500);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Login failed");
+       if (err.response?.status === 429) {
+    toast.error(err.response.data.error || "Too many attempts. Try again later.");
+  } else {
+    toast.error(err.response?.data?.message || "Login failed");
+  }
     } finally {
       setLoading(false);
     }
