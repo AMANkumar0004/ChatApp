@@ -14,16 +14,18 @@ export function useChatInit(receiver: any) {
   const [rateLimitSeconds, setRateLimitSeconds] = useState<number>(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [isReceiverTyping, setIsReceiverTyping] = useState(false);
+
   const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { playNotification } = useNotificationSound();
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const convIdRef = useRef<string | null>(null);
   const userRef = useRef<any>(null);
+  const cachedUserRef = useRef<any>(null); // ✅ cache user across chat switches
   const pageRef = useRef(1);
-  const [isReceiverTyping, setIsReceiverTyping] = useState(false);
-  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { playNotification } = useNotificationSound();
   const isGroup = receiver?.isGroup === true;
 
-  // ✅ Load more messages — defined outside init so it can be returned
   const loadMoreMessages = async () => {
     const convId = convIdRef.current;
     if (!convId || loadingMore || !hasMore) return;
@@ -31,7 +33,7 @@ export function useChatInit(receiver: any) {
     try {
       const nextPage = pageRef.current + 1;
       const res = await api.get(`/conversations/${convId}/messages?page=${nextPage}`);
-      setMessages(prev => [...res.data.messages, ...prev]); // prepend older messages
+      setMessages(prev => [...res.data.messages, ...prev]);
       setHasMore(res.data.hasMore);
       pageRef.current = nextPage;
     } catch (err) {
@@ -42,10 +44,22 @@ export function useChatInit(receiver: any) {
   };
 
   useEffect(() => {
+    // ✅ Clear immediately on chat switch — no stale UI
+    setMessages([]);
+    setHasMore(false);
+    setIsReceiverTyping(false);
+    setReceiverStatus(null);
+    pageRef.current = 1;
+
     const init = async () => {
       try {
-        const res = await api.get("/auth/me");
-        const currentUser = res.data.user;
+        // ✅ Use cached user — skip /auth/me on every chat switch
+        let currentUser = cachedUserRef.current;
+        if (!currentUser) {
+          const res = await api.get("/auth/me");
+          currentUser = res.data.user;
+          cachedUserRef.current = currentUser;
+        }
         setUser(currentUser);
         userRef.current = currentUser;
 
@@ -55,19 +69,18 @@ export function useChatInit(receiver: any) {
           convId = receiver.conversationId;
           setConversationId(convId);
           convIdRef.current = convId;
-          setReceiverStatus(null);
         } else {
-          const convRes = await api.post("/conversations", {
-            receiverId: receiver._id,
-          });
+          const [convRes, statusRes] = await Promise.all([
+            api.post("/conversations", { receiverId: receiver._id }),
+            api.get(`/users/${receiver._id}/status`),
+          ]);
           convId = convRes.data.conversation._id;
           setConversationId(convId);
           convIdRef.current = convId;
-          const statusRes = await api.get(`/users/${receiver._id}/status`);
           setReceiverStatus(statusRes.data);
         }
 
-        // ✅ Fetch first page only
+        // ✅ Fetch first page
         const msgRes = await api.get(`/conversations/${convId}/messages?page=1`);
         setMessages(msgRes.data.messages);
         setHasMore(msgRes.data.hasMore);
@@ -91,11 +104,9 @@ export function useChatInit(receiver: any) {
         socket.off("receive_message");
         socket.on("receive_message", (data) => {
           setMessages((prev) => {
-            // ✅ Remove temp message from optimistic update
             const filtered = prev.filter(m =>
               !(m._id.startsWith('temp_') && m.sender._id === data.sender._id)
             );
-            // ✅ Prevent duplicates
             const exists = filtered.some(m => m._id === data._id);
             if (exists) return filtered;
             return [...filtered, data];
