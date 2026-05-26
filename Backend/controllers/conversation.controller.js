@@ -67,27 +67,41 @@ export const getOrCreateConversation = async (req, res) => {
 export const getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const cacheKey = `messages:${conversationId}`;
+    const page = parseInt(req.query.page) || 1;
+    const limit = 50;
+    const skip = 0;
 
-    const cached = await redis.get(cacheKey);
-    console.log("Cache hit?", !!cached); // ✅ add this
-
-    if (cached) {
-      return res.json({ messages: JSON.parse(cached) });
+    
+    if (page === 1) {
+      const cacheKey = `messages:${conversationId}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const messages = JSON.parse(cached);
+        return res.json({ messages, hasMore: true });
+      }
     }
 
+    const total = await Message.countDocuments({ conversationId });
     const messages = await Message.find({ conversationId })
       .populate("sender", "username profilePic")
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: -1 }) // ✅ newest first
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .then(msgs => msgs.reverse()); // ✅ reverse to show oldest first
 
-    try {
-      await redis.setex(cacheKey, 120, JSON.stringify(messages));
-      console.log("✅ Messages cached:", messages.length); // ✅ add this
-    } catch (redisErr) {
-      console.error("❌ Cache failed:", redisErr.message); // ✅ add this
+    const hasMore = page * limit < total;
+
+    // ✅ Cache first page only
+    if (page === 1) {
+      try {
+        const cacheKey = `messages:${conversationId}`;
+        await redis.setex(cacheKey, 120, JSON.stringify(messages));
+      } catch (redisErr) {
+        console.error("❌ Cache failed:", redisErr.message);
+      }
     }
 
-    res.json({ messages });
+    res.json({ messages, hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
