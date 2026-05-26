@@ -10,6 +10,14 @@ import MessageContextMenu from "./chat/MessageContextMenu";
 import MessageList from "./chat/MessageList";
 import ChatInput from "./chat/ChatInput";
 
+// ✅ Define the file data type
+interface FileData {
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+}
+
 export default function ChatWindow({
   receiver,
   onClose,
@@ -32,7 +40,6 @@ export default function ChatWindow({
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isGroup = receiver?.isGroup === true;
 
-  // ── Custom hooks ──
   const { messages, setMessages, user, conversationId, receiverStatus, rateLimitSeconds, isReceiverTyping } =
     useChatInit(receiver);
 
@@ -46,7 +53,6 @@ export default function ChatWindow({
     uploadFile,
   } = useFileUpload();
 
-  // close menus on click anywhere
   useState(() => {
     const handleClick = () => {
       setContextMenu(null);
@@ -56,19 +62,15 @@ export default function ChatWindow({
     return () => document.removeEventListener("click", handleClick);
   });
 
-  // ✅ Emit typing with debounce — stops after 2s of no typing
   const handleTyping = () => {
     if (!user || !conversationId) return;
     socket.emit("typing", { conversationId, senderId: user._id });
-
-    // Auto emit stop_typing after 2s of no keypress
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       handleStopTyping();
     }, 2000);
   };
 
-  // ✅ Emit stop typing
   const handleStopTyping = () => {
     if (!user || !conversationId) return;
     socket.emit("stop_typing", { conversationId, senderId: user._id });
@@ -79,10 +81,27 @@ export default function ChatWindow({
     if (!message.trim() && !selectedFile) return;
     if (!user || !conversationId) return;
 
-    handleStopTyping(); // ✅ stop typing when message sent
+    handleStopTyping();
 
     try {
-      const fileData = await uploadFile();
+      // ✅ Cast to FileData type
+      const fileData = await uploadFile() as FileData;
+
+      // ✅ Optimistic update
+      const tempMessage = {
+        _id: `temp_${Date.now()}`,
+        conversationId,
+        sender: { _id: user._id, username: user.username, profilePic: user.profilePic },
+        text: message,
+        fileUrl: fileData?.fileUrl || null,
+        fileName: fileData?.fileName || null,
+        fileType: fileData?.fileType || null,
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, tempMessage]);
+      setMessage("");
+      clearSelectedFile();
 
       socket.emit("send_message", {
         conversationId,
@@ -92,8 +111,6 @@ export default function ChatWindow({
         ...fileData,
       });
 
-      setMessage("");
-      clearSelectedFile();
     } catch {
       toast.error("Failed to send file");
     }

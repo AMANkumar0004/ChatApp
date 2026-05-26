@@ -48,29 +48,20 @@ const io = new Server(server, {
   },
 });
 
-// Helper functions — replace all onlineUsers.get/set/delete
-// Keeps socket code clean and readable
-
-// Store userId → socketId in Redis Hash
 async function setUserOnline(userId, socketId) {
-  // Store both directions
   await redis.hset('onlineUsers', userId, socketId);
-  await redis.hset('socketToUser', socketId, userId); 
+  await redis.hset('socketToUser', socketId, userId);
 }
 
-// Get socketId for a userId
 async function getUserSocket(userId) {
   return await redis.hget('onlineUsers', userId);
 }
 
-// Remove user from online hash
 async function setUserOffline(userId, socketId) {
   await redis.hdel('onlineUsers', userId);
-  await redis.hdel('socketToUser', socketId); 
+  await redis.hdel('socketToUser', socketId);
 }
 
-// Find userId by socketId — used in disconnect
-// Returns userId or null
 async function getUserIdBySocket(socketId) {
   return await redis.hget('socketToUser', socketId);
 }
@@ -78,27 +69,22 @@ async function getUserIdBySocket(socketId) {
 io.on("connection", async (socket) => {
   console.log("User connected:", socket.id);
 
-  // REGISTER USER
   socket.on("register_user", async (userId) => {
-    //  Redis instead of Map
     await setUserOnline(userId, socket.id);
     console.log("Registered:", userId, "->", socket.id);
     await User.findByIdAndUpdate(userId, { lastSeen: null });
     io.emit("user_status_change", { userId, lastSeen: null });
   });
 
-  // JOIN CONVERSATION
   socket.on("join_conversation", (conversationId) => {
     if (!conversationId) return console.log("No conversationId provided");
     socket.join(conversationId);
     console.log(`User ${socket.id} joined room: ${conversationId}`);
   });
 
-  // GROUP CREATED
   socket.on("group_created", async (data) => {
     const { conversation, memberIds } = data;
     for (const memberId of memberIds) {
-      //  Redis instead of Map
       const memberSocketId = await getUserSocket(memberId);
       if (memberSocketId) {
         io.to(memberSocketId).emit("added_to_group", conversation);
@@ -106,30 +92,24 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // SEND INVITATION
   socket.on("send_invitation", async (data) => {
     const { receiverId, invitation } = data;
-    //  Redis instead of Map
     const receiverSocketId = await getUserSocket(receiverId);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("receive_invitation", invitation);
     }
   });
 
-  // ACCEPT INVITATION
   socket.on("accept_invitation", async (data) => {
     const { senderId, conversation } = data;
-    //  Redis instead of Map
     const senderSocketId = await getUserSocket(senderId);
     if (senderSocketId) {
       io.to(senderSocketId).emit("invitation_accepted", conversation);
     }
   });
 
-  // REJECT INVITATION
   socket.on("reject_invitation", async (data) => {
     const { senderId } = data;
-    //  Redis instead of Map
     const senderSocketId = await getUserSocket(senderId);
     if (senderSocketId) {
       io.to(senderSocketId).emit("invitation_rejected");
@@ -137,24 +117,22 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("typing", async ({ conversationId, senderId }) => {
-  // Store in Redis with 3s TTL — auto clears when user stops
-  await redis.setex(`typing:${conversationId}:${senderId}`, 3, '1');
-  socket.to(conversationId).emit("user_typing", { senderId });
-});
+    await redis.setex(`typing:${conversationId}:${senderId}`, 3, '1');
+    socket.to(conversationId).emit("user_typing", { senderId });
+  });
 
-socket.on("stop_typing", async ({ conversationId, senderId }) => {
-  await redis.del(`typing:${conversationId}:${senderId}`);
-  socket.to(conversationId).emit("user_stop_typing", { senderId });
-});
+  socket.on("stop_typing", async ({ conversationId, senderId }) => {
+    await redis.del(`typing:${conversationId}:${senderId}`);
+    socket.to(conversationId).emit("user_stop_typing", { senderId });
+  });
 
-  // SEND MESSAGE
   socket.on("send_message", async (data) => {
     try {
       const { conversationId, text, senderId, receiverId, fileUrl, fileName, fileType, fileSize } = data;
 
       if (!conversationId || !senderId) return;
 
-      // Session kick check
+      // ✅ Session kick check
       const cookieHeader = socket.handshake.headers.cookie;
       const cookieToken = cookieHeader
         ?.split(';')
@@ -163,16 +141,13 @@ socket.on("stop_typing", async ({ conversationId, senderId }) => {
 
       const activeToken = await redis.get(`activeSession:${senderId}`);
 
-
-      console.log("Cookie header:", socket.handshake.headers.cookie ? "EXISTS" : "MISSING");
-console.log("Active token in Redis:", activeToken ? "EXISTS" : "MISSING");
       if (activeToken && cookieToken && activeToken !== cookieToken) {
         socket.emit("session_kicked");
         socket.disconnect();
         return;
       }
 
-      // Rate limit check
+      // ✅ Rate limit check
       const { limited, ttl } = await isRateLimited(`msg:${senderId}`, 10, 10);
       if (limited) {
         socket.emit("rate_limited", {
@@ -192,24 +167,23 @@ console.log("Active token in Redis:", activeToken ? "EXISTS" : "MISSING");
         fileSize: fileSize || null,
       });
 
-      await message.populate("sender", "username profilePic");
-      
-      //  Update Redis cache with new message
-const cacheKey = `messages:${conversationId}`;
-const cached = await redis.get(cacheKey);
-if (cached) {
-  const messages = JSON.parse(cached);
-  messages.push(message);
-  // Keep only last 50
-  if (messages.length > 50) messages.shift();
-  await redis.setex(cacheKey, 300, JSON.stringify(messages));
-}
-      await Conversation.findByIdAndUpdate(conversationId, {
-        lastMessage: message._id,
-      });
+      // ✅ Run populate and conversation update in parallel
+      await Promise.all([
+        message.populate("sender", "username profilePic"),
+        Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id }),
+      ]);
 
+      // ✅ Update Redis cache
+      const cacheKey = `messages:${conversationId}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const messages = JSON.parse(cached);
+        messages.push(message.toObject());
+        await redis.setex(cacheKey, 120, JSON.stringify(messages));
+      }
+
+      // ✅ Emit to sender and receiver
       if (receiverId) {
-        //  Redis instead of Map
         const senderSocketId = await getUserSocket(senderId);
         const receiverSocketId = await getUserSocket(receiverId);
         if (senderSocketId) io.to(senderSocketId).emit("receive_message", message);
@@ -232,11 +206,8 @@ if (cached) {
     }
   });
 
-  // DISCONNECT
   socket.on("disconnect", async () => {
     const now = new Date();
-
-    // Redis instead of Map — find userId by socketId
     const userId = await getUserIdBySocket(socket.id);
 
     if (userId) {
@@ -249,17 +220,17 @@ if (cached) {
   });
 
   socket.on("delete_message", async ({ messageId, conversationId }) => {
+    await redis.del(`messages:${conversationId}`);
+    io.to(conversationId).emit("message_deleted", { messageId });
+  });
 
-  await redis.del(`messages:${conversationId}`);
-  io.to(conversationId).emit("message_deleted", { messageId });
-});
+  socket.on("clear_chat", async ({ conversationId }) => {
+    await redis.del(`messages:${conversationId}`);
+    io.to(conversationId).emit("chat_cleared", { conversationId });
+  });
 
- socket.on("clear_chat", async ({ conversationId }) => {
-  
-  await redis.del(`messages:${conversationId}`);
-  io.to(conversationId).emit("chat_cleared", { conversationId });
-});
-});
+}); // ✅ closes io.on("connection")
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("DB connected");
@@ -267,4 +238,4 @@ mongoose.connect(process.env.MONGO_URI)
       console.log(`Server running with socket.io on port ${PORT}`);
     });
   })
-  .catch(err => console.log(err)); 
+  .catch(err => console.log(err));

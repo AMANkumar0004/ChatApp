@@ -2,6 +2,13 @@ import { useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { api } from "../services/api";
 
+interface FileData {
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+}
+
 export function useFileUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -34,7 +41,7 @@ export function useFileUpload() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const uploadFile = async (): Promise<object> => {
+  const uploadFile = async (): Promise<FileData> => {
     if (!selectedFile) return {};
     setUploading(true);
     try {

@@ -72,17 +72,16 @@ export const getMessages = async (req, res) => {
     // Check Redis first
     const cached = await redis.get(cacheKey);
     if (cached) {
-      return res.json({ messages: JSON.parse(cached), fromCache: true });
+      return res.json({ messages: JSON.parse(cached) });
     }
 
-    //  Cache miss — fetch from MongoDB
+    // Cache miss — fetch ALL from MongoDB
     const messages = await Message.find({ conversationId })
       .populate("sender", "username profilePic")
-      .sort({ createdAt: 1 })
-      .limit(50); // only last 50
+      .sort({ createdAt: 1 });
 
-    //  Store in Redis for 5 minutes
-    await redis.setex(cacheKey, 300, JSON.stringify(messages));
+    //  Cache for 2 minutes — no limit on count
+    await redis.setex(cacheKey, 120, JSON.stringify(messages));
 
     res.json({ messages });
   } catch (err) {

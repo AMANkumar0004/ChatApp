@@ -64,15 +64,26 @@ const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         );
 
         socket.off("receive_message");
-        socket.on("receive_message", (data) => {
-          setMessages((prev) => [...prev, data]);
-          const isOwnMessage = data.sender._id === userRef.current._id;
-          const isActiveConversation = data.conversationId === convIdRef.current;
-          const windowUnfocused = !window.document.hasFocus();
-          if (!isOwnMessage && (!isActiveConversation || windowUnfocused)) {
-            playNotification();
-          }
-        });
+socket.on("receive_message", (data) => {
+  setMessages((prev) => {
+    //  Remove temp message if it exists, then add real one
+    const filtered = prev.filter(m => 
+      !m._id.startsWith('temp_') || 
+      m.sender._id !== data.sender._id
+    );
+    // Prevent duplicates
+    const exists = filtered.some(m => m._id === data._id);
+    if (exists) return filtered;
+    return [...filtered, data];
+  });
+
+  const isOwnMessage = data.sender._id === userRef.current._id;
+  const isActiveConversation = data.conversationId === convIdRef.current;
+  const windowUnfocused = !window.document.hasFocus();
+  if (!isOwnMessage && (!isActiveConversation || windowUnfocused)) {
+    playNotification();
+  }
+});
 
         socket.off("message_deleted");
         socket.on("message_deleted", ({ messageId }) => {
