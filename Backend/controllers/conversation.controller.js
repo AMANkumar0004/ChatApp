@@ -69,19 +69,23 @@ export const getMessages = async (req, res) => {
     const { conversationId } = req.params;
     const cacheKey = `messages:${conversationId}`;
 
-    // Check Redis first
     const cached = await redis.get(cacheKey);
+    console.log("Cache hit?", !!cached); // ✅ add this
+
     if (cached) {
       return res.json({ messages: JSON.parse(cached) });
     }
 
-    // Cache miss — fetch ALL from MongoDB
     const messages = await Message.find({ conversationId })
       .populate("sender", "username profilePic")
       .sort({ createdAt: 1 });
 
-    //  Cache for 2 minutes — no limit on count
-    await redis.setex(cacheKey, 120, JSON.stringify(messages));
+    try {
+      await redis.setex(cacheKey, 120, JSON.stringify(messages));
+      console.log("✅ Messages cached:", messages.length); // ✅ add this
+    } catch (redisErr) {
+      console.error("❌ Cache failed:", redisErr.message); // ✅ add this
+    }
 
     res.json({ messages });
   } catch (err) {
