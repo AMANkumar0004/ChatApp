@@ -26,7 +26,6 @@ export default function MessageList({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length === 0 || messages[messages.length - 1]?._id]);
 
-  // ✅ Maintain scroll position when older messages load
   useEffect(() => {
     if (containerRef.current && prevScrollHeight.current) {
       const newScrollHeight = containerRef.current.scrollHeight;
@@ -35,7 +34,6 @@ export default function MessageList({
     }
   }, [messages]);
 
-  // ✅ Detect scroll to top
   const handleScroll = () => {
     if (!containerRef.current) return;
     if (containerRef.current.scrollTop === 0 && hasMore && !loadingMore) {
@@ -44,13 +42,24 @@ export default function MessageList({
     }
   };
 
+  // ✅ Helper to get reply preview text
+  const getReplyPreview = (replyTo: any) => {
+    if (!replyTo) return null;
+    if (replyTo.fileType === "image") return "📷 Photo";
+    if (replyTo.fileType === "pdf") return "📄 PDF";
+    if (replyTo.fileType === "word") return "📝 Document";
+    if (replyTo.text) return replyTo.text.length > 60
+      ? replyTo.text.slice(0, 60) + "..."
+      : replyTo.text;
+    return "📎 File";
+  };
+
   return (
     <div
       ref={containerRef}
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto p-3 md:p-4"
     >
-      {/* ✅ Load more indicator */}
       {loadingMore && (
         <p className="text-center text-[#8696a0] text-xs py-2">
           Loading older messages...
@@ -74,6 +83,7 @@ export default function MessageList({
         const isMine = senderId?.toString() === user?._id?.toString();
         const hasFile = !!msg.fileUrl;
         const isImageMsg = msg.fileType === "image";
+        const replyPreview = getReplyPreview(msg.replyTo);
 
         return (
           <div
@@ -105,6 +115,31 @@ export default function MessageList({
                 }}>
                   {msg.sender?.username || ""}
                 </p>
+              )}
+
+              {/* ✅ Reply preview block */}
+              {replyPreview && (
+                <div style={{
+                  borderLeft: "3px solid #00a884",
+                  backgroundColor: isMine ? "#004a3b" : "#1a2830",
+                  borderRadius: "4px",
+                  padding: "4px 8px",
+                  marginBottom: "6px",
+                  maxWidth: "100%",
+                }}>
+                  <p style={{ fontSize: "11px", color: "#00a884", marginBottom: "2px" }}>
+                    {msg.replyTo?.sender?.username || "Unknown"}
+                  </p>
+                  <p style={{
+                    fontSize: "12px",
+                    color: "#8696a0",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {replyPreview}
+                  </p>
+                </div>
               )}
 
               {hasFile ? (

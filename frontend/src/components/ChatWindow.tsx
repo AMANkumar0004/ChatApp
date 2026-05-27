@@ -10,7 +10,6 @@ import MessageContextMenu from "./chat/MessageContextMenu";
 import MessageList from "./chat/MessageList";
 import ChatInput from "./chat/ChatInput";
 
-// ✅ Define the file data type
 interface FileData {
   fileUrl?: string;
   fileName?: string;
@@ -28,6 +27,7 @@ export default function ChatWindow({
   const [message, setMessage] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [headerMenu, setHeaderMenu] = useState(false);
+  const [replyTo, setReplyTo] = useState<any>(null); // ✅ reply state
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -41,7 +41,7 @@ export default function ChatWindow({
   const isGroup = receiver?.isGroup === true;
 
   const { messages, setMessages, user, conversationId, receiverStatus, rateLimitSeconds, isReceiverTyping, hasMore, loadMoreMessages, loadingMore } =
-  useChatInit(receiver);
+    useChatInit(receiver);
 
   const {
     selectedFile,
@@ -66,9 +66,7 @@ export default function ChatWindow({
     if (!user || !conversationId) return;
     socket.emit("typing", { conversationId, senderId: user._id });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      handleStopTyping();
-    }, 2000);
+    typingTimeoutRef.current = setTimeout(() => handleStopTyping(), 2000);
   };
 
   const handleStopTyping = () => {
@@ -84,10 +82,8 @@ export default function ChatWindow({
     handleStopTyping();
 
     try {
-      // ✅ Cast to FileData type
       const fileData = await uploadFile() as FileData;
 
-      // ✅ Optimistic update
       const tempMessage = {
         _id: `temp_${Date.now()}`,
         conversationId,
@@ -97,6 +93,13 @@ export default function ChatWindow({
         fileName: fileData?.fileName || null,
         fileType: fileData?.fileType || null,
         createdAt: new Date().toISOString(),
+        // ✅ include reply in optimistic update
+        replyTo: replyTo ? {
+          _id: replyTo._id,
+          text: replyTo.text,
+          fileType: replyTo.fileType,
+          sender: replyTo.sender,
+        } : null,
       };
 
       setMessages((prev) => [...prev, tempMessage]);
@@ -108,8 +111,11 @@ export default function ChatWindow({
         text: message,
         senderId: user._id,
         receiverId: isGroup ? null : receiver._id,
+        replyTo: replyTo?._id || null, // ✅ send reply id to server
         ...fileData,
       });
+
+      setReplyTo(null); // ✅ clear reply after sending
 
     } catch {
       toast.error("Failed to send file");
@@ -145,14 +151,12 @@ export default function ChatWindow({
     const container = chatContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-
     const menuWidth = 150;
-    const menuHeight = isMine ? 80 : 40;
+    const menuHeight = isMine ? 100 : 80;
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
     if (x + menuWidth > rect.width) x = rect.width - menuWidth - 8;
     if (y + menuHeight > rect.height) y = y - menuHeight;
-
     setContextMenu({ visible: true, x, y, msgId, isMine });
   };
 
@@ -180,18 +184,19 @@ export default function ChatWindow({
         messages={messages}
         onCopy={(text) => { navigator.clipboard.writeText(text); toast.success("Copied!"); }}
         onDelete={deleteMessage}
+        onReply={(msg) => setReplyTo(msg)} // ✅ set reply
         onClose={() => setContextMenu(null)}
       />
 
-     <MessageList
-  messages={messages}
-  user={user}
-  isGroup={isGroup}
-  onRightClick={handleRightClick}
-  hasMore={hasMore}
-  loadMoreMessages={loadMoreMessages}
-  loadingMore={loadingMore}
-/>
+      <MessageList
+        messages={messages}
+        user={user}
+        isGroup={isGroup}
+        onRightClick={handleRightClick}
+        hasMore={hasMore}
+        loadMoreMessages={loadMoreMessages}
+        loadingMore={loadingMore}
+      />
 
       {/* ✅ Typing indicator */}
       {isReceiverTyping && !isGroup && (
@@ -202,6 +207,26 @@ export default function ChatWindow({
             <span className="w-2 h-2 bg-[#8696a0] rounded-full animate-bounce [animation-delay:300ms]" />
           </div>
           <p className="text-xs text-[#8696a0]">{receiver.username} is typing...</p>
+        </div>
+      )}
+
+      {/* ✅ Reply preview bar above input */}
+      {replyTo && (
+        <div className="px-4 py-2 bg-[#1f2c33] border-t border-[#2a3942] flex items-center gap-3">
+          <div className="flex-1 border-l-4 border-[#00a884] pl-3">
+            <p className="text-xs text-[#00a884] font-medium">
+              {replyTo.sender?.username || "Unknown"}
+            </p>
+            <p className="text-xs text-[#8696a0] truncate">
+              {replyTo.text || (replyTo.fileType === "image" ? "📷 Photo" : "📎 File")}
+            </p>
+          </div>
+          <button
+            onClick={() => setReplyTo(null)}
+            className="text-[#8696a0] hover:text-white text-lg transition"
+          >
+            ✕
+          </button>
         </div>
       )}
 

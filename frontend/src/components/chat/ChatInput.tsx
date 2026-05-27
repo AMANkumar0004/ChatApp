@@ -32,7 +32,6 @@ export default function ChatInput({
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const isRateLimited = rateLimitSeconds > 0;
 
-  // ✅ Close picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
@@ -51,20 +50,27 @@ export default function ChatInput({
   return (
     <div className="border-t border-[#2a3942] flex-shrink-0 relative">
 
-      {/* ✅ Emoji Picker */}
+      {/* Emoji Picker */}
       {showEmojiPicker && (
         <div
           ref={emojiPickerRef}
           className="absolute bottom-16 left-2 z-50"
+          style={{ overflow: "hidden", borderRadius: "12px" }}
         >
           <EmojiPicker
             theme={Theme.DARK}
             onEmojiClick={handleEmojiClick}
-            width={300}
-            height={400}
+            width={580}
+            height={320}
             searchDisabled={false}
             skinTonesDisabled
             previewConfig={{ showPreview: false }}
+            style={{ 
+              overflow:"hidden",
+              scrollbarColor: "transparent transparent",
+              scrollbarWidth: "none",
+              border: "1px solid #2a3942",
+            }}
           />
         </div>
       )}
@@ -111,38 +117,45 @@ export default function ChatInput({
           <i className="fa-regular fa-file"></i>
         </button>
 
-        {/* ✅ Emoji button */}
-        <button
-          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-[#2a3942] text-[#8696a0] hover:text-white hover:bg-[#3a4952] transition flex-shrink-0 text-lg"
-        >
-          😊
-        </button>
-
-        <input
-          value={message}
-          onChange={(e) => {
-            setMessage(e.target.value);
-            if (e.target.value) onTyping();
-            else onStopTyping();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !isRateLimited) {
-              onStopTyping();
-              setShowEmojiPicker(false);
-              onSend();
+        {/* ✅ Input box with emoji button inside */}
+        <div className="flex-1 flex items-center bg-[#2a3942] rounded-lg px-3 gap-2">
+          <input
+            value={message}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              if (e.target.value) onTyping();
+              else onStopTyping();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !isRateLimited) {
+                onStopTyping();
+                setShowEmojiPicker(false);
+                onSend();
+              }
+            }}
+            className="flex-1 py-2 md:py-3 bg-transparent text-white outline-none placeholder-[#8696a0] text-sm"
+            placeholder={
+              isRateLimited
+                ? `Wait ${rateLimitSeconds}s...`
+                : selectedFile
+                ? "Add a caption..."
+                : "Type a message..."
             }
-          }}
-          className="flex-1 p-2 md:p-3 bg-[#2a3942] rounded-lg text-white outline-none placeholder-[#8696a0] text-sm"
-          placeholder={
-            isRateLimited
-              ? `Wait ${rateLimitSeconds}s...`
-              : selectedFile
-              ? "Add a caption..."
-              : "Type a message..."
-          }
-        />
+          />
 
+          {/* Emoji button inside input */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEmojiPicker(!showEmojiPicker);
+            }}
+            className="text-[#8696a0] hover:text-white transition text-lg flex-shrink-0"
+          >
+            <i className="fa-regular fa-face-smile-beam"></i>
+          </button>
+        </div>
+
+        {/* Send button */}
         <button
           onClick={() => {
             onStopTyping();

@@ -3,15 +3,19 @@ export default function MessageContextMenu({
   messages,
   onCopy,
   onDelete,
+  onReply,
   onClose,
 }: {
   contextMenu: { x: number; y: number; msgId: string; isMine: boolean } | null;
   messages: any[];
-  onCopy: (text: string) => void; 
+  onCopy: (text: string) => void;
   onDelete: (id: string) => void;
+  onReply: (msg: any) => void;
   onClose: () => void;
 }) {
   if (!contextMenu) return null;
+
+  const msg = messages.find((m) => m._id === contextMenu.msgId);
 
   return (
     <div
@@ -24,16 +28,27 @@ export default function MessageContextMenu({
       }}
       onClick={(e) => e.stopPropagation()}
     >
+      {/* ✅ Reply option */}
       <button
         className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#2a3942] flex items-center gap-2"
         onClick={() => {
-          const msg = messages.find((m) => m._id === contextMenu.msgId);
+          if (msg) onReply(msg);
+          onClose();
+        }}
+      >
+        ↩ Reply
+      </button>
+
+      <button
+        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#2a3942] flex items-center gap-2"
+        onClick={() => {
           if (msg?.text) onCopy(msg.text);
           onClose();
         }}
       >
          Copy
       </button>
+
       {contextMenu.isMine && (
         <button
           className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#2a3942] flex items-center gap-2"
