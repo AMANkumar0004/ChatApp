@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, skipGlobalLoader } from "../services/api";
+import { api } from "../services/api";
 import { socket } from "../socket";
 import InvitationPanel from "./InvitationPanel";
 import CreateGroupModal from "./CreateGroupModel";
@@ -68,7 +68,7 @@ export default function Sidebar({
   const fetchContacts = async () => {
     try {
       setContactsLoading(true);
-      const res = await api.get("/conversations/contacts", skipGlobalLoader());
+      const res = await api.get("/conversations/contacts");
       const seen = new Set();
       const unique = res.data.contacts.filter((c: any) => {
         if (c.isGroup) return true;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
-import { api, skipGlobalLoader } from "../services/api";
+import { api } from "../services/api";
 import { useNotificationSound } from "./useNotificationSound";
 import { toast } from "react-toastify";
 
@@ -57,7 +57,7 @@ export function useChatInit(receiver: any) {
       try {
         let currentUser = cachedUserRef.current;
         if (!currentUser) {
-          const res = await api.get("/auth/me", skipGlobalLoader());
+          const res = await api.get("/auth/me");
           currentUser = res.data.user;
           cachedUserRef.current = currentUser;
         }
@@ -72,8 +72,8 @@ export function useChatInit(receiver: any) {
           convIdRef.current = convId;
         } else {
           const [convRes, statusRes] = await Promise.all([
-            api.post("/conversations", { receiverId: receiver._id }, skipGlobalLoader()),
-            api.get(`/users/${receiver._id}/status`, skipGlobalLoader()),
+            api.post("/conversations", { receiverId: receiver._id }),
+            api.get(`/users/${receiver._id}/status`),
           ]);
           convId = convRes.data.conversation._id;
           setConversationId(convId);
@@ -83,8 +83,7 @@ export function useChatInit(receiver: any) {
 
         // ✅ Fetch first page
         const msgRes = await api.get(
-          `/conversations/${convId}/messages?page=1`,
-          skipGlobalLoader()
+          `/conversations/${convId}/messages?page=1`
         );
         setMessages(msgRes.data.messages);
         setHasMore(msgRes.data.hasMore);

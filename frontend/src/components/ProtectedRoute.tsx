@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { api, skipGlobalLoader } from "../services/api";
+import { api } from "../services/api";
 import { PageLoader } from "./ui/Loader";
 
 export default function ProtectedRoute({ children }: { children: any }) {
@@ -10,7 +10,7 @@ export default function ProtectedRoute({ children }: { children: any }) {
   useEffect(() => {
     const check = async () => {
       try {
-        await api.get("/auth/me", skipGlobalLoader());
+        await api.get("/auth/me");
         setAuthenticated(true);
       } catch {
         localStorage.removeItem("token");

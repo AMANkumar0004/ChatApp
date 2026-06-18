@@ -1,11 +1,9 @@
 import axios, { type InternalAxiosRequestConfig, type AxiosRequestConfig } from "axios";
 import { toast } from "react-toastify";
 
-// Augment axios's own config type so `_skipGlobalLoader` and `_trackLoading`
-// are recognized as valid fields wherever AxiosRequestConfig is used.
 declare module "axios" {
   export interface AxiosRequestConfig {
-    _skipGlobalLoader?: boolean;
+    _showGlobalLoader?: boolean;
     _trackLoading?: boolean;
   }
 }
@@ -26,8 +24,9 @@ export function registerLoadingHandlers(
   onRequestEnd = end;
 }
 
-export function skipGlobalLoader(): AxiosRequestConfig {
-  return { _skipGlobalLoader: true };
+// Opt-IN now — only requests that explicitly ask for the global loader will show it.
+export function withGlobalLoader(): AxiosRequestConfig {
+  return { _showGlobalLoader: true };
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -36,9 +35,9 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  const skip = config._skipGlobalLoader === true;
-  config._trackLoading = !skip;
-  if (!skip) onRequestStart?.();
+  const show = config._showGlobalLoader === true;
+  config._trackLoading = show;
+  if (show) onRequestStart?.();
 
   return config;
 });
