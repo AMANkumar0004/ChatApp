@@ -11,6 +11,23 @@ const generateToken = (user) => {
   );
 };
 
+async function bfExists(filter, value) {
+  try {
+    const result = await redis.sendCommand(['BF.EXISTS', filter, value]);
+    return result === 1;
+  } catch {
+    return false; // fail open
+  }
+}
+
+async function bfAdd(filter, value) {
+  try {
+    await redis.sendCommand(['BF.ADD', filter, value]);
+  } catch (err) {
+    console.error("BF.ADD failed:", err.message);
+  }
+}
+
 export const signup = async (req, res) => {
   try {
     const { username, email, password, phone } = req.body;
@@ -28,18 +45,44 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: "Phone number must be exactly 10 digits" });
     }
 
-    const phoneNum = await User.findOne({ phone: req.body.phone });
-    if (phoneNum) {
-      return res.status(400).json({ message: "User already exists with this phone number" });
+    // ✅ Bloom filter checks first — fast path
+    const [emailMayExist, usernameMayExist, phoneMayExist] = await Promise.all([
+      bfExists('bf:emails', email),
+      bfExists('bf:usernames', username),
+      bfExists('bf:phones', phone),
+    ]);
+
+    // ✅ Only hit MongoDB if BF says maybe exists
+    if (emailMayExist) {
+      const existing = await User.findOne({ email });
+      if (existing) {
+        return res.status(400).json({ message: "User already exists with this email" });
+      }
     }
 
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ message: "User already exists with this email" });
+    if (usernameMayExist) {
+      const existing = await User.findOne({ username });
+      if (existing) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+    }
+
+    if (phoneMayExist) {
+      const existing = await User.findOne({ phone });
+      if (existing) {
+        return res.status(400).json({ message: "User already exists with this phone number" });
+      }
     }
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await User.create({ username, email, phone, password: hashed });
+
+    // ✅ Add to Bloom filters after successful creation
+    await Promise.all([
+      bfAdd('bf:emails', email),
+      bfAdd('bf:usernames', username),
+      bfAdd('bf:phones', phone),
+    ]);
 
     const token = generateToken(user);
 

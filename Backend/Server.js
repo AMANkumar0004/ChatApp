@@ -282,9 +282,29 @@ io.on("connection", async (socket) => {
 
 });
 
+//  Seed Bloom filters from existing users on startup
+async function seedBloomFilters() {
+  try {
+    const users = await User.find({}).select("email username phone");
+    if (!users.length) return;
+
+    for (const user of users) {
+      if (user.email) await redis.sendCommand(['BF.ADD', 'bf:emails', user.email]);
+      if (user.username) await redis.sendCommand(['BF.ADD', 'bf:usernames', user.username]);
+      if (user.phone) await redis.sendCommand(['BF.ADD', 'bf:phones', String(user.phone)]);
+    }
+
+    console.log(`Bloom filters seeded with ${users.length} users`);
+  } catch (err) {
+    console.error("Bloom filter seeding failed:", err.message);
+  }
+}
+
+// Update mongoose.connect to call seed after connecting:
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log("DB connected");
+    await seedBloomFilters(); 
     server.listen(PORT, () => {
       console.log(`Server running with socket.io on port ${PORT}`);
     });
